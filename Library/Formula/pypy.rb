@@ -2,9 +2,9 @@ require 'formula'
 
 class Pypy < Formula
   homepage 'http://pypy.org/'
-  url 'https://bitbucket.org/pypy/pypy/downloads/pypy-2.2-osx64.tar.bz2'
-  version '2.2.0'
-  sha1 '6091171ebebb6f02e15b181d2a9a00e79c5b26a7'
+  url 'https://bitbucket.org/pypy/pypy/downloads/pypy-2.2.1-osx64.tar.bz2'
+  version '2.2.1'
+  sha1 'caf13d377fcdced4bfadd4158ba3d18d520396f3'
 
   depends_on :arch => :x86_64
 
@@ -21,7 +21,7 @@ class Pypy < Formula
   def install
     # Having PYTHONPATH set can cause the build to fail if another
     # Python is present, e.g. a Homebrew-provided Python 2.x
-    # See https://github.com/mxcl/homebrew/issues/24364
+    # See https://github.com/Homebrew/homebrew/issues/24364
     ENV['PYTHONPATH'] = ''
 
     rmtree 'site-packages'
@@ -85,7 +85,7 @@ class Pypy < Formula
         #{scripts_folder}/easy_install pip
         #{scripts_folder}/pip install --upgrade setuptools
 
-    See: https://github.com/mxcl/homebrew/wiki/Homebrew-and-Python
+    See: https://github.com/Homebrew/homebrew/wiki/Homebrew-and-Python
     EOS
   end
 
