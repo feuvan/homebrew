@@ -1,17 +1,25 @@
-require 'formula'
-
 class PyenvVirtualenv < Formula
-  homepage 'https://github.com/yyuu/pyenv-virtualenv'
-  url 'https://github.com/yyuu/pyenv-virtualenv/archive/v20130622.tar.gz'
-  sha1 '2e27b3b76931e6f0eecc4bccb3166d1abc130393'
+  desc "Pyenv plugin to manage virtualenv"
+  homepage "https://github.com/yyuu/pyenv-virtualenv"
+  url "https://github.com/yyuu/pyenv-virtualenv/archive/v20150719.tar.gz"
+  sha256 "84f9aae3656b4fae0e2f6ec38aad3e5e2c0fc0a44b23c54af3c6ee947ad01c37"
 
-  head 'https://github.com/yyuu/pyenv-virtualenv.git'
+  head "https://github.com/yyuu/pyenv-virtualenv.git"
 
-  depends_on 'pyenv'
+  depends_on "pyenv"
 
   def install
-    ENV['PREFIX'] = prefix
+    ENV["PREFIX"] = prefix
     system "./install.sh"
-    ln_sf opt_prefix, "#{HOMEBREW_PREFIX}/var/lib/pyenv/plugins/#{name}"
+  end
+
+  def caveats; <<-EOS.undent
+    To enable auto-activation add to your profile:
+      if which pyenv-virtualenv-init > /dev/null; then eval "$(pyenv virtualenv-init -)"; fi
+    EOS
+  end
+
+  test do
+    shell_output("eval \"$(pyenv init -)\" && pyenv virtualenvs")
   end
 end

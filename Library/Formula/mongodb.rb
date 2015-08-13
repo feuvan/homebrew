@@ -1,87 +1,119 @@
-require 'formula'
+require "language/go"
 
 class Mongodb < Formula
-  homepage 'http://www.mongodb.org/'
-  url 'http://downloads.mongodb.org/src/mongodb-src-r2.4.8.tar.gz'
-  sha1 '59fa237e102c9760271df9433ee7357dd0ec831f'
+  desc "High-performance, schema-free, document-oriented database"
+  homepage "https://www.mongodb.org/"
+
+  stable do
+    url "https://fastdl.mongodb.org/src/mongodb-src-r3.0.5.tar.gz"
+    sha256 "05b16a7991aa65b1d396a3dc622107fba3216fffa8b9ed0817e76ae95f5f7fdb"
+
+    go_resource "github.com/mongodb/mongo-tools" do
+      url "https://github.com/mongodb/mongo-tools.git",
+        :tag => "r3.0.5",
+        :revision => "9da01528ee677e1790bb0b506c816ca9fbe0a6a8"
+    end
+  end
 
   bottle do
-    sha1 '959debee5883e3b3cc9730fcb09c6b5a6c827a28' => :mavericks
-    sha1 'd3ee1821c3a11b0f5e399f5ba32b724d54fc22d9' => :mountain_lion
-    sha1 '08dc5f0eb32fd70afe3b0ac6f1c260aa353f7432' => :lion
+    cellar :any
+    sha256 "3a748f6609e1c83149b018592a7642729395a074034da924c68ad6d4c62e16ef" => :yosemite
+    sha256 "868bb486e1f3e2afae8791305c54061921d7760ab690c7980437bd24a40020da" => :mavericks
+    sha256 "a57923e2f82283476fb887c9a8b630436eeece36ff68de5e03538a9a2a696081" => :mountain_lion
   end
 
   devel do
-    url 'http://downloads.mongodb.org/src/mongodb-src-r2.5.4.tar.gz'
-    sha1 'ad40b93c9638178cd487c80502084ac3a9472270'
-  end
+    url "https://fastdl.mongodb.org/src/mongodb-src-r3.1.6.tar.gz"
+    sha256 "de8591025f38bfdf5c8540e70a09a426d7e0b45a41b625d959598efd57dc20fb"
 
-  head 'https://github.com/mongodb/mongo.git'
-
-  def patches
-    if build.stable?
-      [
-        # Fix Clang v8 build failure from build warnings and -Werror
-        'https://github.com/mongodb/mongo/commit/be4bc7.patch',
-        # Fixes crash on shell exit for 2.4.x
-        'https://github.com/mongodb/mongo/commit/670c98.patch'
-      ]
+    go_resource "github.com/mongodb/mongo-tools" do
+      url "https://github.com/mongodb/mongo-tools.git",
+        :tag => "r3.1.6",
+        :revision => "ec79a8183b012d3c55fc22fde298dd3032444b0b"
     end
   end
 
-  depends_on 'scons' => :build
-  depends_on 'openssl' => :optional
+  option "with-boost", "Compile using installed boost, not the version shipped with mongodb"
+
+  needs :cxx11
+
+  depends_on "boost" => :optional
+  depends_on "go" => :build
+  depends_on :macos => :mountain_lion
+  depends_on "scons" => :build
+  depends_on "openssl" => :optional
 
   def install
-    # mongodb currently can't build with libc++; this should be fixed in
-    # 2.6, but can't be backported to the current stable release.
-    ENV.cxx += ' -stdlib=libstdc++' if ENV.compiler == :clang && MacOS.version >= :mavericks
+    ENV.cxx11 if MacOS.version < :mavericks
+    ENV.libcxx if build.devel?
 
-    scons = Formula.factory('scons').opt_prefix/'bin/scons'
+    # New Go tools have their own build script but the server scons "install" target is still
+    # responsible for installing them.
+    Language::Go.stage_deps resources, buildpath/"src"
 
-    args = ["--prefix=#{prefix}", "-j#{ENV.make_jobs}"]
-    args << '--64' if MacOS.prefer_64_bit?
-    args << "--cc=#{ENV.cc}"
-    args << "--cxx=#{ENV.cxx}"
+    cd "src/github.com/mongodb/mongo-tools" do
+      # https://github.com/Homebrew/homebrew/issues/40136
+      inreplace "build.sh", '-ldflags "-X github.com/mongodb/mongo-tools/common/options.Gitspec `git rev-parse HEAD`"', ""
 
-    if build.with? 'openssl'
-      args << '--ssl'
-      args << "--extrapathdyn=#{Formula.factory('openssl').opt_prefix}"
+      args = %W[]
+
+      if build.with? "openssl"
+        args << "ssl"
+        ENV["LIBRARY_PATH"] = "#{Formula["openssl"].opt_prefix}/lib"
+        ENV["CPATH"] = "#{Formula["openssl"].opt_prefix}/include"
+      end
+      system "./build.sh", *args
     end
 
-    system scons, 'install', *args
+    mkdir "src/mongo-tools"
+    cp Dir["src/github.com/mongodb/mongo-tools/bin/*"], "src/mongo-tools/"
 
-    (prefix+'mongod.conf').write mongodb_conf
+    args = %W[
+      --prefix=#{prefix}
+      -j#{ENV.make_jobs}
+      --osx-version-min=#{MacOS.version}
+    ]
 
-    mv bin/'mongod', prefix
-    (bin/'mongod').write <<-EOS.undent
-      #!/usr/bin/env ruby
-      ARGV << '--config' << '#{etc}/mongod.conf' unless ARGV.find { |arg|
-        arg =~ /^\s*\-\-config$/ or arg =~ /^\s*\-f$/
-      }
-      exec "#{prefix}/mongod", *ARGV
-    EOS
+    if build.stable?
+      args << "--cc=#{ENV.cc}"
+      args << "--cxx=#{ENV.cxx}"
+    end
 
-    etc.install prefix+'mongod.conf'
+    if build.devel?
+      args << "CC=#{ENV.cc}"
+      args << "CXX=#{ENV.cxx}"
+    end
 
-    (var+'mongodb').mkpath
-    (var+'log/mongodb').mkpath
+    args << "--use-system-boost" if build.with? "boost"
+    args << "--use-new-tools"
+    args << "--disable-warnings-as-errors" if MacOS.version >= :yosemite
+
+    if build.with? "openssl"
+      args << "--ssl" << "--extrapath=#{Formula["openssl"].opt_prefix}"
+    end
+
+    scons "install", *args
+
+    (buildpath+"mongod.conf").write mongodb_conf
+    etc.install "mongod.conf"
+
+    (var+"mongodb").mkpath
+    (var+"log/mongodb").mkpath
   end
 
   def mongodb_conf; <<-EOS.undent
-    # Store data in #{var}/mongodb instead of the default /data/db
-    dbpath = #{var}/mongodb
-
-    # Append logs to #{var}/log/mongodb/mongo.log
-    logpath = #{var}/log/mongodb/mongo.log
-    logappend = true
-
-    # Only accept local connections
-    bind_ip = 127.0.0.1
+    systemLog:
+      destination: file
+      path: #{var}/log/mongodb/mongo.log
+      logAppend: true
+    storage:
+      dbPath: #{var}/mongodb
+    net:
+      bindIp: 127.0.0.1
     EOS
   end
 
-  plist_options :manual => "mongod"
+  plist_options :manual => "mongod --config #{HOMEBREW_PREFIX}/etc/mongod.conf"
 
   def plist; <<-EOS.undent
     <?xml version="1.0" encoding="UTF-8"?>
@@ -92,8 +124,7 @@ class Mongodb < Formula
       <string>#{plist_name}</string>
       <key>ProgramArguments</key>
       <array>
-        <string>#{opt_prefix}/mongod</string>
-        <string>run</string>
+        <string>#{opt_bin}/mongod</string>
         <string>--config</string>
         <string>#{etc}/mongod.conf</string>
       </array>
@@ -110,15 +141,19 @@ class Mongodb < Formula
       <key>HardResourceLimits</key>
       <dict>
         <key>NumberOfFiles</key>
-        <integer>1024</integer>
+        <integer>4096</integer>
       </dict>
       <key>SoftResourceLimits</key>
       <dict>
         <key>NumberOfFiles</key>
-        <integer>1024</integer>
+        <integer>4096</integer>
       </dict>
     </dict>
     </plist>
     EOS
+  end
+
+  test do
+    system "#{bin}/mongod", "--sysinfo"
   end
 end

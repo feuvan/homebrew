@@ -1,21 +1,20 @@
-require 'formula'
-
 class Bigloo < Formula
-  homepage 'http://www-sop.inria.fr/indes/fp/Bigloo/'
-  url 'ftp://ftp-sop.inria.fr/indes/fp/Bigloo/bigloo4.0b.tar.gz'
-  version '4.0b'
-  sha1 '2c70863de59d1d92b63aee3f1ee2f39c6672e732'
+  desc "Scheme implementation with object system, C, and Java interfaces"
+  homepage "http://www-sop.inria.fr/indes/fp/Bigloo/"
+  url "ftp://ftp-sop.inria.fr/indes/fp/Bigloo/bigloo4.1a-2.tar.gz"
+  version "4.1a-2"
+  sha256 "5db2e7cdb7aa4bb380f35a2a476d282842df72febdb934545b475e0932fad927"
 
-  depends_on 'gmp' => :recommended
+  depends_on "gmp" => :recommended
 
-  option 'with-jvm', 'Enable JVM support'
+  option "with-jvm", "Enable JVM support"
 
   fails_with :clang do
     build 500
     cause <<-EOS.undent
       objs/obj_u/Ieee/dtoa.c:262:79504: fatal error: parser
       recursion limit reached, program too complex
-      EOS
+    EOS
   end
 
   def install
@@ -31,7 +30,7 @@ class Bigloo < Formula
             "--disable-mpg123",
             "--disable-flac"]
 
-    args << "--jvm=yes" if build.with? 'jvm'
+    args << "--jvm=yes" if build.with? "jvm"
     args << "--no-gmp" if build.without? "gmp"
 
     # SRFI 27 is 32-bit only
@@ -40,10 +39,10 @@ class Bigloo < Formula
     system "./configure", *args
 
     system "make"
-    system "make install"
+    system "make", "install"
 
     # Install the other manpages too
-    manpages = %w( bgldepend bglmake bglpp bgltags bglafile bgljfile bglmco bglprof )
-    manpages.each {|m| man1.install "manuals/#{m}.man" => "#{m}.1"}
+    manpages = %w[bgldepend bglmake bglpp bgltags bglafile bgljfile bglmco bglprof]
+    manpages.each { |m| man1.install "manuals/#{m}.man" => "#{m}.1" }
   end
 end

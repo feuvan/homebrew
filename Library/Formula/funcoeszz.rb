@@ -1,17 +1,21 @@
-require 'formula'
-
 class Funcoeszz < Formula
-  homepage 'http://funcoeszz.net/'
-  url 'http://funcoeszz.net/download/funcoeszz-13.2.sh'
-  sha1 '33d6950dc83fd2118bc45a752c4a77be3b112573'
+  desc "Dozens of command-line mini-applications (Portuguese)"
+  homepage "http://funcoeszz.net/"
+  url "http://funcoeszz.net/download/funcoeszz-13.2.sh"
+  sha256 "c790bafb8ba8bafa78e48179e46e670ba5cad0d13e8a631b84f7e3fe21b8d86d"
+
+  depends_on "bash"
 
   def install
-    prefix.install "funcoeszz-#{version}.sh"
+    prefix.install "funcoeszz-#{version}.sh" => "funcoeszz.sh"
   end
 
   def caveats; <<-EOS.undent
     To use this software add to your profile:
-      source #{opt_prefix}/funcoeszz-#{version}.sh
+      export ZZPATH="#{opt_prefix}/funcoeszz.sh"
+      source "$ZZPATH"
+
+    Usage of a newer Bash than the OS X default is required.
     EOS
   end
 end

@@ -1,82 +1,82 @@
-require 'formula'
-
 class Pyside < Formula
-  homepage 'http://www.pyside.org'
-  url 'https://download.qt-project.org/official_releases/pyside/pyside-qt4.8+1.2.1.tar.bz2'
-  mirror 'https://distfiles.macports.org/py-pyside/pyside-qt4.8+1.2.1.tar.bz2'
-  sha1 'eec5bed37647dd8d3d1c7a610ad913312dd55910'
+  desc "Python bindings for Qt"
+  homepage "http://qt-project.org/wiki/PySide"
+  url "https://download.qt.io/official_releases/pyside/pyside-qt4.8+1.2.2.tar.bz2"
+  mirror "https://distfiles.macports.org/py-pyside/pyside-qt4.8+1.2.2.tar.bz2"
+  sha256 "a1a9df746378efe52211f1a229f77571d1306fb72830bbf73f0d512ed9856ae1"
 
-  head 'git://gitorious.org/pyside/pyside.git'
+  head "https://gitorious.org/pyside/pyside.git"
 
-  depends_on 'cmake' => :build
-  depends_on :python => :recommended
-  depends_on :python3 => :optional
-
-  if build.with? 'python3'
-    depends_on 'shiboken' => 'with-python3'
-  else
-    depends_on 'shiboken'
+  bottle do
+    sha1 "8137d4ab768f0b621c76f3e8f51aff9594527b7a" => :yosemite
+    sha1 "23cceb7a03918cb1aa1e897c9ed1b3224610c2d2" => :mavericks
+    sha1 "370b1d0fc1099689977ba04eb3602c41b5def89c" => :mountain_lion
   end
 
-  depends_on 'qt'
+  # don't use depends_on :python because then bottles install Homebrew's python
+  option "without-python", "Build without python 2 support"
+  depends_on :python => :recommended if MacOS.version <= :snow_leopard
+  depends_on :python3 => :optional
 
-  def patches
-    DATA  # Fix moc_qpytextobject.cxx not found (https://codereview.qt-project.org/62479)
+  option "without-docs", "Skip building documentation"
+
+  depends_on "cmake" => :build
+  depends_on "qt"
+
+  if build.with? "python3"
+    depends_on "shiboken" => "with-python3"
+  else
+    depends_on "shiboken"
+  end
+
+  resource "sphinx" do
+    url "https://pypi.python.org/packages/source/S/Sphinx/Sphinx-1.2.3.tar.gz"
+    sha256 "94933b64e2fe0807da0612c574a021c0dac28c7bd3c4a23723ae5a39ea8f3d04"
   end
 
   def install
-    python do
-      # Add out of tree build because one of its deps, shiboken, itself needs an
-      # out of tree build in shiboken.rb.
-      mkdir "macbuild#{python.if3then3}" do
+    if build.with? "docs"
+      ENV.prepend_create_path "PYTHONPATH", buildpath+"sphinx/lib/python2.7/site-packages"
+      resources.each do |r|
+        r.stage do
+          system "python", *Language::Python.setup_install_args(buildpath/"sphinx")
+        end
+      end
+
+      ENV.prepend_path "PATH", (buildpath/"sphinx/bin")
+    else
+      rm buildpath/"doc/CMakeLists.txt"
+    end
+
+    # Add out of tree build because one of its deps, shiboken, itself needs an
+    # out of tree build in shiboken.rb.
+    Language::Python.each_python(build) do |_python, version|
+      mkdir "macbuild#{version}" do
+        qt = Formula["qt"].opt_prefix
         args = std_cmake_args + %W[
-          -DSITE_PACKAGE=#{python.site_packages}
-          -DALTERNATIVE_QT_INCLUDE_DIR=#{Formula.factory('qt').opt_prefix}/include
-          -DQT_SRC_DIR=#{Formula.factory('qt').opt_prefix}/src
-          ..
+          -DSITE_PACKAGE=#{lib}/python#{version}/site-packages
+          -DALTERNATIVE_QT_INCLUDE_DIR=#{qt}/include
+          -DQT_SRC_DIR=#{qt}/src
         ]
-        # The next two lines are because shiboken needs them
-        args << "-DPYTHON_SUFFIX='-python2.7'" if python2
-        args << "-DPYTHON_SUFFIX='.cpython-33m'" if python3
-        system 'cmake', *args
-        system 'make'
-        system 'make', 'install'
-        system 'make', 'clean'
-        # Todo: How to deal with pyside.pc file? It doesn't support 2.x and 3.x!
+        if version.to_s[0, 1] == "2"
+          args << "-DPYTHON_SUFFIX=-python#{version}"
+        else
+          major_version = version.to_s[0, 1]
+          minor_version = version.to_s[2, 3]
+          args << "-DPYTHON_SUFFIX=.cpython-#{major_version}#{minor_version}m"
+          args << "-DUSE_PYTHON3=1"
+        end
+        args << ".."
+        system "cmake", *args
+        system "make"
+        system "make", "install"
       end
     end
   end
 
   test do
-    python do
-      system python, '-c', "from PySide import QtCore"
+    Language::Python.each_python(build) do |python, _version|
+      system python, "-c", "from PySide import QtCore"
     end
   end
-
-  def caveats
-    python.standard_caveats if python
-  end
 end
-
-__END__
-diff --git a/PySide/QtGui/CMakeLists.txt b/PySide/QtGui/CMakeLists.txt
-index 7625634..6e14706 100644
---- a/PySide/QtGui/CMakeLists.txt
-+++ b/PySide/QtGui/CMakeLists.txt
-@@ -403,7 +403,6 @@ ${CMAKE_CURRENT_BINARY_DIR}/PySide/QtGui/qwizard_wrapper.cpp
- ${CMAKE_CURRENT_BINARY_DIR}/PySide/QtGui/qworkspace_wrapper.cpp
-
- ${SPECIFIC_OS_FILES}
--${QPYTEXTOBJECT_MOC}
- ${QtGui_46_SRC}
- ${QtGui_47_SRC}
- ${QtGui_OPTIONAL_SRC}
-@@ -434,7 +433,7 @@ create_pyside_module(QtGui
-                      QtGui_deps
-                      QtGui_typesystem_path
-                      QtGui_SRC
--                     ""
-+                     QPYTEXTOBJECT_MOC
-                      ${CMAKE_CURRENT_BINARY_DIR}/typesystem_gui.xml)
-
- install(FILES ${pyside_SOURCE_DIR}/qpytextobject.h DESTINATION include/PySide/QtGui/)

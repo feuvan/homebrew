@@ -1,34 +1,27 @@
-require 'formula'
-
 class Juju < Formula
-  homepage 'https://juju.ubuntu.com'
-  url 'https://launchpad.net/juju-core/1.16/1.16.5/+download/juju-core_1.16.5.tar.gz'
-  sha1 '2202805d09dffe64d1e07988b9d1b16e02c7bd52'
+  desc "DevOps management tool"
+  homepage "https://juju.ubuntu.com"
+  url "https://launchpad.net/juju-core/1.24/1.24.4/+download/juju-core_1.24.4.tar.gz"
+  sha256 "4ed9b3c96aab88d7b397339044b45e1e0f13a971df2bc4c87a3ebe2b59d0c408"
 
-  depends_on 'go' => :build
-
-  def install
-    ENV['GOPATH'] = buildpath
-    args = %w(install launchpad.net/juju-core/cmd/juju)
-    args.insert(1, "-v") if ARGV.verbose?
-    system "go", *args
-    bin.install 'bin/juju'
-    (bash_completion/'juju-completion.bash').write <<-EOS.undent
-    _juju()
-    {
-        local cur prev options files targets
-        COMPREPLY=()
-        cur="${COMP_WORDS[COMP_CWORD]}"
-        prev="${COMP_WORDS[COMP_CWORD-1]}"
-        actions=$(juju help commands 2>/dev/null | awk '{print $1}')
-        COMPREPLY=( $( compgen -W "${actions}" -- ${cur} ) )
-        return 0
-    }
-    complete -F _juju juju
-    EOS
+  bottle do
+    cellar :any
+    sha256 "d3366546c922511aa3efd49fa3d007949ff796f8cb6e3e21730b48ad27688406" => :yosemite
+    sha256 "887b16a687a50d693501481f2115fbc0e72d363c8d429cf9deb67cedde7df813" => :mavericks
+    sha256 "4c040edf953d51ce5493d825b652bc03d3adb27ae79e9f0ec5cea3f781105492" => :mountain_lion
   end
 
-  def test
+  depends_on "go" => :build
+
+  def install
+    ENV["GOPATH"] = buildpath
+    system "go", "build", "github.com/juju/juju/cmd/juju"
+    system "go", "build", "github.com/juju/juju/cmd/plugins/juju-metadata"
+    bin.install "juju", "juju-metadata"
+    bash_completion.install "src/github.com/juju/juju/etc/bash_completion.d/juju-core"
+  end
+
+  test do
     system "#{bin}/juju", "version"
   end
 end

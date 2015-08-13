@@ -1,24 +1,31 @@
-require 'formula'
+require "formula"
 
 class Burp < Formula
-  homepage 'http://burp.grke.org/'
-  url 'http://downloads.sourceforge.net/project/burp/burp-1.3.36/burp-1.3.36.tar.bz2'
-  sha1 '471237090e631b3cb91ff864db84c7644c42bf87'
+  desc "Network backup and restore"
+  homepage "http://burp.grke.org/"
+  url "http://burp.grke.org/downloads/burp-1.4.28/burp-1.4.28.tar.bz2"
+  sha256 "01c41c07805ebe8c882d7cb9f294e779b6decbe2eb2c81fd65d8fb2b174e18f0"
+  head "https://github.com/grke/burp.git"
 
-  head 'https://github.com/grke/burp.git'
-
-  depends_on 'librsync'
-
-  # patches to change directories to brew conventions in Makefile and config files
-  def patches
-    DATA
+  bottle do
+    cellar :any
+    revision 1
+    sha256 "712a71cb917b533f403b676aff9e24c44d7ab48e253cf3ee87a50e502f01f5ad" => :yosemite
+    sha256 "fff5e534ef2e6746ad67ac5f58387ea31158a853cdb833b7d8723d38e96e8a1b" => :mavericks
+    sha256 "0816d7da7eaf1fb90058bebe4a72649b2ae1697ed08cfbaf860908c763a1eb41" => :mountain_lion
   end
 
+  depends_on "librsync"
+  depends_on "openssl"
+
+  # patches to change directories to brew conventions in Makefile and config files
+  patch :DATA
+
   def install
-   system "./configure", "--prefix=#{prefix}",
-                         "--sysconfdir=#{etc}/burp",
-                         "--sbindir=#{bin}",
-                         "--localstatedir=#{var}/burp"
+    system "./configure", "--prefix=#{prefix}",
+                          "--sysconfdir=#{etc}/burp",
+                          "--sbindir=#{bin}",
+                          "--localstatedir=#{var}/burp"
     system "make", "install"
   end
 
@@ -41,7 +48,7 @@ class Burp < Formula
       <false/>
       <key>ProgramArguments</key>
       <array>
-        <string>#{opt_prefix}/bin/burp</string>
+        <string>#{opt_bin}/burp</string>
         <string>-a</string>
         <string>t</string>
       </array>
@@ -59,7 +66,6 @@ class Burp < Formula
     #{etc}/burp/burp.conf
     EOS
   end
-
 end
 
 __END__

@@ -1,49 +1,51 @@
-require 'formula'
-
 class Openvpn < Formula
-  homepage 'http://openvpn.net/'
-  url 'http://build.openvpn.net/downloads/releases/openvpn-2.3.2.tar.gz'
-  mirror 'http://swupdate.openvpn.org/community/releases/openvpn-2.3.2.tar.gz'
-  sha256 '20bda3f9debb9a52db262aecddfa4e814050a9404a9106136b7e3b6f7ef36ffc'
+  desc "SSL VPN implementing OSI layer 2 or 3 secure network extension"
+  homepage "https://openvpn.net/index.php/download/community-downloads.html"
+  url "https://swupdate.openvpn.org/community/releases/openvpn-2.3.7.tar.gz"
+  mirror "http://build.openvpn.net/downloads/releases/openvpn-2.3.7.tar.gz"
+  sha256 "1f02a4cd6aeb6250ca9311560875b10ce8957a3c9101a8005bd1e17e5b03146e"
 
-  depends_on 'lzo'
-  depends_on 'tuntap'
+  bottle do
+    cellar :any
+    sha256 "e2117b3eb0c39e1823d81bfbf0feed017ea1fe6a079b052c83755514a8ad6a94" => :mavericks
+    sha256 "fc4c5fc02f9791220cfee0a0c5a55d3a30f6fce83d201728340facafa8f05b80" => :mountain_lion
+  end
+
+  depends_on "lzo"
+  depends_on :tuntap
+  depends_on "openssl"
 
   def install
     # pam_appl header is installed in a different location on Leopard
     # and older; reported upstream https://community.openvpn.net/openvpn/ticket/326
     if MacOS.version < :snow_leopard
-      %w[auth-pam.c pamdl.c].each do |file|
-        inreplace "src/plugins/auth-pam/#{file}",
-          "security/pam_appl.h", "pam/pam_appl.h"
-      end
+      inreplace Dir["src/plugins/auth-pam/{auth-pam,pamdl}.c"],
+        "security/pam_appl.h", "pam/pam_appl.h"
     end
 
-    # Build and install binary
     system "./configure", "--disable-debug",
                           "--disable-dependency-tracking",
+                          "--disable-silent-rules",
+                          "--with-crypto-library=openssl",
                           "--prefix=#{prefix}",
                           "--enable-password-save"
-    system "make install"
+    system "make", "install"
 
-    # Adjust sample file paths
-    inreplace ["sample/sample-config-files/openvpn-startup.sh"] do |s|
-      s.gsub! "/etc/openvpn", etc+'openvpn'
-    end
+    inreplace "sample/sample-config-files/openvpn-startup.sh",
+      "/etc/openvpn", "#{etc}/openvpn"
 
-    # Install sample files
-    Dir['sample/sample-*'].each do |d|
-      (share + 'doc/openvpn' + d).install Dir[d+'/*']
-    end
+    (doc/"sample").install Dir["sample/sample-*"]
 
-    # Create etc & var paths
-    (etc + 'openvpn').mkpath
-    (var + 'run/openvpn').mkpath
+    (etc+"openvpn").mkpath
+    (var+"run/openvpn").mkpath
+    # We don't use PolarSSL, so this file is unnecessary and somewhat confusing.
+    rm "#{share}/doc/openvpn/README.polarssl"
   end
 
   def caveats; <<-EOS.undent
-    Make sure to follow the directions given by `brew info tuntap`
-    before trying to use OpenVPN.
+    If you have installed the Tuntap dependency as a source package you will
+    need to follow the instructions found in `brew info tuntap`. If you have
+    installed the binary Tuntap package, no further action is necessary.
 
     For OpenVPN to work as a server, you will need to create configuration file
     in #{etc}/openvpn, samples can be found in #{share}/doc/openvpn
@@ -61,7 +63,7 @@ class Openvpn < Formula
       <string>#{plist_name}</string>
       <key>ProgramArguments</key>
       <array>
-        <string>#{opt_prefix}/sbin/openvpn</string>
+        <string>#{opt_sbin}/openvpn</string>
         <string>--config</string>
         <string>#{etc}/openvpn/openvpn.conf</string>
       </array>
@@ -80,5 +82,9 @@ class Openvpn < Formula
     </dict>
     </plist>
     EOS
+  end
+
+  test do
+    system "#{sbin}/openvpn", "--show-ciphers"
   end
 end

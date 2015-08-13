@@ -1,20 +1,22 @@
-require 'formula'
+require "formula"
 
 class Mongrel2 < Formula
-  homepage 'http://mongrel2.org/'
-  url 'https://github.com/zedshaw/mongrel2/archive/v1.8.1.tar.gz'
-  sha1 '11230cb59aa4834e017023c8f9b6519831d91767'
+  desc "Application, language, and network architecture agnostic web server"
+  homepage "http://mongrel2.org/"
+  url "https://github.com/zedshaw/mongrel2/releases/download/1.9.2/mongrel2-v1.9.2.tar.bz2"
+  sha1 "1b44d8028bba7f427cfda3fc7bf6c4350d810a75"
+  revision 1
 
-  head 'https://github.com/zedshaw/mongrel2.git'
+  head "https://github.com/zedshaw/mongrel2.git"
 
-  depends_on 'zeromq'
-
-  def patches
-    # allow mongrel2 to build against libzmq 4
-    [
-       "https://gist.github.com/minrk/7632116/raw/44d0ed09ecfc68a9f9d6a940c6367f703cd55c46/0001-add-zmq_compat-check-for-libzmq-4.patch"
-    ]
+  bottle do
+    cellar :any
+    sha256 "7179e51d48d93b723cb7b047ab541a43ade6f2e55f603be55e44a7f342af4f05" => :yosemite
+    sha256 "508cea44a7cb7705a2b03f804ef4a23d55ad96e2ff0987a36aaca3582200adf7" => :mavericks
+    sha256 "8c61454fa2ff553a83faae91b0085b4b613175fe41f3574f81ebd7d4ae2ec93c" => :mountain_lion
   end
+
+  depends_on "zeromq"
 
   def install
     # Build in serial. See:
@@ -22,8 +24,8 @@ class Mongrel2 < Formula
     ENV.j1
 
     # Mongrel2 pulls from these ENV vars instead
-    ENV['OPTFLAGS'] = "#{ENV.cflags} #{ENV.cppflags}"
-    ENV['OPTLIBS'] = ENV.ldflags
+    ENV["OPTFLAGS"] = "#{ENV.cflags} #{ENV.cppflags}"
+    ENV["OPTLIBS"] = "#{ENV.ldflags} -undefined dynamic_lookup"
 
     system "make all"
     system "make", "install", "PREFIX=#{prefix}"

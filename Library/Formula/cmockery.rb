@@ -1,20 +1,17 @@
-require 'formula'
-
 class Cmockery < Formula
-  homepage 'http://code.google.com/p/cmockery/'
-  url 'http://cmockery.googlecode.com/files/cmockery-0.1.2.tar.gz'
-  sha1 '964ed1104a0cbbea8a9a34e88c6e79b546eff1bc'
+  desc "Unit testing and mocking library for C"
+  homepage "https://code.google.com/p/cmockery/"
+  url "https://cmockery.googlecode.com/files/cmockery-0.1.2.tar.gz"
+  sha256 "b9e04bfbeb45ceee9b6107aa5db671c53683a992082ed2828295e83dc84a8486"
 
-  def patches
-    # This patch will be integrated upstream in 0.1.3, this is due to malloc.h being already in stdlib on OSX
-    # It is safe to remove it on the next version
-    # More info on http://code.google.com/p/cmockery/issues/detail?id=3
-    DATA
-  end
+  # This patch will be integrated upstream in 0.1.3, this is due to malloc.h being already in stdlib on OSX
+  # It is safe to remove it on the next version
+  # More info on http://code.google.com/p/cmockery/issues/detail?id=3
+  patch :DATA
 
   def install
     system "./configure", "--prefix=#{prefix}"
-    system "make install"
+    system "make", "install"
   end
 end
 

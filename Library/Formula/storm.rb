@@ -1,12 +1,11 @@
-require 'formula'
-
 class Storm < Formula
-  homepage 'https://github.com/nathanmarz/storm/wiki'
-  url 'https://dl.dropboxusercontent.com/s/dj86w8ojecgsam7/storm-0.9.0.1.zip'
-  sha1 '230abcc15a9e1358442429fd1c856dc12a3be920'
+  desc "Distributed realtime computation system to process data streams"
+  homepage "https://storm.apache.org"
+  url "https://www.apache.org/dyn/closer.cgi?path=storm/apache-storm-0.9.5/apache-storm-0.9.5.tar.gz"
+  sha256 "2e8337126de8d1e180abe77fb81af7c971f8c4b2dad94e446ac86c0f02ba3fb2"
 
   def install
-    libexec.install Dir['*']
+    libexec.install Dir["*"]
     bin.install_symlink libexec/"bin/storm"
   end
 end

@@ -1,10 +1,9 @@
-require 'formula'
-
 class Masscan < Formula
-  homepage 'https://github.com/robertdavidgraham/masscan/'
-  url 'https://github.com/robertdavidgraham/masscan/archive/1.0.tar.gz'
-  sha1 'c5a7604f52ba0d2578232c6c7a833d3a8756149f'
-  head 'https://github.com/kaizoku/masscan.git'
+  desc "TCP port scanner, scans entire Internet in under 5 minutes"
+  homepage "https://github.com/robertdavidgraham/masscan/"
+  url "https://github.com/robertdavidgraham/masscan/archive/1.0.3.tar.gz"
+  sha256 "331edd529df1904bcbcfb43029ced7e2dafe1744841e74cd9fc9f440b8301085"
+  head "https://github.com/robertdavidgraham/masscan.git"
 
   def install
     system "make"
@@ -12,6 +11,6 @@ class Masscan < Formula
   end
 
   test do
-    assert `#{bin}/masscan --echo`.include? 'adapter ='
+    assert `#{bin}/masscan --echo`.include? "adapter ="
   end
 end

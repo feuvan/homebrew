@@ -1,9 +1,9 @@
-require 'formula'
-
 class Ghi < Formula
-  homepage 'https://github.com/stephencelis/ghi'
-  url 'https://github.com/stephencelis/ghi/archive/0.9.0.20131120.tar.gz'
-  sha1 '7d1b245f22f78338ec3c5d1696af80b1437c3c7a'
+  desc "Work on GitHub issues on the command-line"
+  homepage "https://github.com/stephencelis/ghi"
+  url "https://github.com/stephencelis/ghi/archive/0.9.3.tar.gz"
+  head "https://github.com/stephencelis/ghi.git"
+  sha256 "1b58c7ec6e9339c44175808719694d7ee21cbd254d3a2e6d31a70d31027e9bea"
 
   def install
     bin.install "ghi"

@@ -1,23 +1,28 @@
-require 'formula'
-
 class Rethinkdb < Formula
-  homepage 'http://www.rethinkdb.com/'
-  url 'http://download.rethinkdb.com/dist/rethinkdb-1.11.2.tgz'
-  sha1 '06edac5fa1daa5e611faabfac2b77edbe82d9934'
+  desc "The open-source database for the realtime web"
+  homepage "http://www.rethinkdb.com/"
+  url "http://download.rethinkdb.com/dist/rethinkdb-2.1.1.tgz"
+  sha256 "1e273f4e3d1902f7ed9aebb147992713568eb2957f4f3af635f4ed63c43a3b49"
+
+  bottle do
+    cellar :any
+    sha256 "b743e910f6ee34f7f4f10091eef7c0811ff16e780ae9931d8d604c4231b9260f" => :yosemite
+    sha256 "7c5cc05fe50a92fbb0364bc55312ce93af605f9ca338d7cd82c39aef74badcfe" => :mavericks
+    sha256 "0db293238d66b1049360f84c1b56ada3ff16312b1c404075c9fb8ba21abdc5ec" => :mountain_lion
+  end
 
   depends_on :macos => :lion
-  depends_on 'boost' => :build
+  depends_on "boost" => :build
+  depends_on "openssl"
+  depends_on "icu4c"
 
   fails_with :gcc do
     build 5666 # GCC 4.2.1
-    cause 'RethinkDB uses C++0x'
+    cause "RethinkDB uses C++0x"
   end
 
   def install
     args = ["--prefix=#{prefix}"]
-
-    # brew's v8 is too recent. rethinkdb uses an older v8 API
-    args += ["--fetch", "v8"]
 
     # rethinkdb requires that protobuf be linked against libc++
     # but brew's protobuf is sometimes linked against libstdc++
@@ -25,7 +30,9 @@ class Rethinkdb < Formula
 
     system "./configure", *args
     system "make"
-    system "make install-osx"
+    system "make", "install-osx"
+
+    mkdir_p "#{var}/log/rethinkdb"
   end
 
   def plist; <<-EOS.undent
@@ -37,7 +44,7 @@ class Rethinkdb < Formula
       <string>#{plist_name}</string>
       <key>ProgramArguments</key>
       <array>
-          <string>#{opt_prefix}/bin/rethinkdb</string>
+          <string>#{opt_bin}/rethinkdb</string>
           <string>-d</string>
           <string>#{var}/rethinkdb</string>
       </array>
@@ -54,5 +61,10 @@ class Rethinkdb < Formula
     </dict>
     </plist>
     EOS
+  end
+
+  test do
+    shell_output("#{bin}/rethinkdb create -d test")
+    assert File.read("test/metadata").start_with?("RethinkDB")
   end
 end

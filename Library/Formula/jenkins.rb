@@ -1,22 +1,35 @@
-require 'formula'
-
 class Jenkins < Formula
-  homepage 'http://jenkins-ci.org'
-  url 'http://mirrors.jenkins-ci.org/war/1.541/jenkins.war'
-  sha1 '4ef5e3ec2ba8b9463d3cdb6ce65c03590438a71b'
+  desc "Extendable open source continuous integration server"
+  homepage "https://jenkins-ci.org"
+  url "http://mirrors.jenkins-ci.org/war/1.624/jenkins.war"
+  sha256 "f8be718fe5ca3b025f53c89ddb484e1844995902816f739f93f5d2746e6db48a"
 
-  head 'https://github.com/jenkinsci/jenkins.git'
+  bottle do
+    cellar :any
+    sha256 "01a81aef39d3e86505963c3f616b66727b9ffabd95a58579b5c490b81cb46c82" => :yosemite
+    sha256 "52f70b1f5728971ccd26b36fb4e0463b7ff9f16a597e0ba4258b0811d3bea431" => :mavericks
+    sha256 "c61099c5fd0c00113d4f96ebf904957e1daabafe733279aa6fd32271574820e0" => :mountain_lion
+  end
+
+  head do
+    url "https://github.com/jenkinsci/jenkins.git"
+    depends_on "maven" => :build
+  end
+
+  depends_on :java => "1.6+"
 
   def install
     if build.head?
-      system "mvn clean install -pl war -am -DskipTests"
-      libexec.install 'war/target/jenkins.war', '.'
+      system "mvn", "clean", "install", "-pl", "war", "-am", "-DskipTests"
     else
-      libexec.install "jenkins.war"
+      system "jar", "xvf", "jenkins.war"
     end
+    libexec.install Dir["**/jenkins.war", "**/jenkins-cli.jar"]
+    bin.write_jar_script libexec/"jenkins.war", "jenkins"
+    bin.write_jar_script libexec/"jenkins-cli.jar", "jenkins-cli"
   end
 
-  plist_options :manual => "java -jar #{HOMEBREW_PREFIX}/opt/jenkins/libexec/jenkins.war"
+  plist_options :manual => "jenkins"
 
   def plist; <<-EOS.undent
     <?xml version="1.0" encoding="UTF-8"?>
@@ -30,7 +43,7 @@ class Jenkins < Formula
           <string>/usr/bin/java</string>
           <string>-Dmail.smtp.starttls.enable=true</string>
           <string>-jar</string>
-          <string>#{opt_prefix}/libexec/jenkins.war</string>
+          <string>#{opt_libexec}/jenkins.war</string>
           <string>--httpListenAddress=127.0.0.1</string>
           <string>--httpPort=8080</string>
         </array>
@@ -43,6 +56,20 @@ class Jenkins < Formula
 
   def caveats; <<-EOS.undent
     Note: When using launchctl the port will be 8080.
-    EOS
+  EOS
+  end
+
+  test do
+    pid = fork do
+      exec "#{bin}/jenkins"
+    end
+    sleep 60
+
+    begin
+      assert_match /"mode":"NORMAL"/, shell_output("curl localhost:8080/api/json")
+    ensure
+      Process.kill("SIGINT", pid)
+      Process.wait(pid)
+    end
   end
 end

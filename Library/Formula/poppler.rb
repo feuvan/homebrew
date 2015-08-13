@@ -1,51 +1,76 @@
-require 'formula'
-
 class Poppler < Formula
-  homepage 'http://poppler.freedesktop.org'
-  url 'http://poppler.freedesktop.org/poppler-0.24.4.tar.xz'
-  sha1 '7938c92c61b63331f2af463db0d10048bf0d4712'
+  desc "PDF rendering library (based on the xpdf-3.0 code base)"
+  homepage "http://poppler.freedesktop.org"
+  url "http://poppler.freedesktop.org/poppler-0.34.0.tar.xz"
+  sha256 "1ba4ba9a2f9eb1e62ee6d736f4d82be4fc5f6dd177dc2b03febbe2ef2e515cb0"
+  revision 1
 
-  option 'with-qt4', 'Build Qt backend'
-  option 'with-glib', 'Build Glib backend'
+  bottle do
+    sha256 "aff18157ab1769ba425cdce67c77c86e244ffd237f069188ffba73c44ab812c1" => :yosemite
+    sha256 "77eb4e8ccbd344d9ee3318082adeda8e81fbb67e37205a54d1eab7b281955925" => :mavericks
+    sha256 "dc6bbbb825357abbc0903c7cd41f77bfd578e40e4e0db977628c0877ec4bd4f9" => :mountain_lion
+  end
 
-  depends_on 'pkg-config' => :build
-  depends_on 'xz' => :build
+  option "with-qt", "Build Qt backend"
+  option "with-qt5", "Build Qt5 backend"
+  option "with-little-cms2", "Use color management system"
 
-  depends_on :fontconfig
-  depends_on 'openjpeg'
+  deprecated_option "with-qt4" => "with-qt"
+  deprecated_option "with-lcms2" => "with-little-cms2"
 
-  depends_on 'qt' if build.with? 'qt4'
-  depends_on 'glib' => :optional
-  depends_on 'cairo' if build.with? 'glib' # Needs a newer Cairo build than OS X 10.6.7 provides
+  depends_on "pkg-config" => :build
+  depends_on "cairo"
+  depends_on "fontconfig"
+  depends_on "freetype"
+  depends_on "gettext"
+  depends_on "glib"
+  depends_on "gobject-introspection"
+  depends_on "jpeg"
+  depends_on "libpng"
+  depends_on "libtiff"
+  depends_on "openjpeg"
 
-  conflicts_with 'pdftohtml', :because => 'both install `pdftohtml` binaries'
+  depends_on "qt" => :optional
+  depends_on "qt5" => :optional
+  depends_on "little-cms2" => :optional
 
-  conflicts_with 'pdf2image', 'xpdf',
-    :because => 'poppler, pdf2image, and xpdf install conflicting executables'
+  conflicts_with "pdftohtml", :because => "both install `pdftohtml` binaries"
 
-  resource 'font-data' do
-    url 'http://poppler.freedesktop.org/poppler-data-0.4.6.tar.gz'
-    sha1 'f030563eed9f93912b1a546e6d87936d07d7f27d'
+  resource "font-data" do
+    url "http://poppler.freedesktop.org/poppler-data-0.4.7.tar.gz"
+    sha256 "e752b0d88a7aba54574152143e7bf76436a7ef51977c55d6bd9a48dccde3a7de"
   end
 
   def install
-    if build.with? 'qt4'
-      ENV['POPPLER_QT4_CFLAGS'] = `#{HOMEBREW_PREFIX}/bin/pkg-config QtCore QtGui --libs`.chomp
-      ENV.append 'LDFLAGS', "-Wl,-F#{HOMEBREW_PREFIX}/lib"
+    ENV["LIBOPENJPEG_CFLAGS"] = "-I#{Formula["openjpeg"].opt_include}/openjpeg-1.5"
+
+    args = %W[
+      --disable-dependency-tracking
+      --prefix=#{prefix}
+      --enable-xpdf-headers
+      --enable-poppler-glib
+      --disable-gtk-test
+      --enable-introspection=yes
+    ]
+
+    if build.with? "qt"
+      args << "--enable-poppler-qt4"
+    elsif build.with? "qt5"
+      args << "--enable-poppler-qt5"
+    else
+      args << "--disable-poppler-qt4" << "--disable-poppler-qt5"
     end
 
-    args = ["--disable-dependency-tracking", "--prefix=#{prefix}", "--enable-xpdf-headers"]
-    # Explicitly disable Qt if not requested because `POPPLER_QT4_CFLAGS` won't
-    # be set and the build will fail.
-    #
-    # Also, explicitly disable Glib as Poppler will find it and set up to
-    # build, but Superenv will have stripped the Glib utilities out of the
-    # PATH.
-    args << ( build.with?('qt4') ? '--enable-poppler-qt4' : '--disable-poppler-qt4' )
-    args << ( build.with?('glib') ? '--enable-poppler-glib' : '--disable-poppler-glib' )
+    args << "--enable-cms=lcms2" if build.with? "little-cms2"
 
     system "./configure", *args
-    system "make install"
-    resource('font-data').stage { system "make", "install", "prefix=#{prefix}" }
+    system "make", "install"
+    resource("font-data").stage do
+      system "make", "install", "prefix=#{prefix}"
+    end
+  end
+
+  test do
+    system "#{bin}/pdfinfo", test_fixtures("test.pdf")
   end
 end

@@ -1,53 +1,84 @@
-require 'formula'
-
-class Libpar2 < Formula
-  homepage 'http://parchive.sourceforge.net/'
-  url 'http://downloads.sourceforge.net/project/parchive/libpar2/0.2/libpar2-0.2.tar.gz'
-  sha1 '4b3da928ea6097a8299aadafa703fc6d59bdfb4b'
-
-  def patches
-    # Patch libpar2 - bugfixes and ability to cancel par2 repair
-    "https://gist.github.com/raw/4576230/e722f2113195ee9b8ee67c1c424aa3f2085b1066/libpar2-0.2-nzbget.patch"
-  end
-end
-
 class Nzbget < Formula
-  homepage 'http://sourceforge.net/projects/nzbget/'
-  url 'http://downloads.sourceforge.net/project/nzbget/nzbget-stable/11.0/nzbget-11.0.tar.gz'
-  sha1 '0c0f83de3ef25a6117c1c988d99db9d92c3739eb'
+  desc "Binary newsgrabber for nzb files"
+  homepage "http://nzbget.net/"
+  url "https://downloads.sourceforge.net/project/nzbget/nzbget-stable/15.0/nzbget-15.0.tar.gz"
+  sha256 "3ef13f3e5917e4cda19c4fc0cd37e79967a19b4e3448c239ff24e37712a6cc0a"
 
-  head 'https://nzbget.svn.sourceforge.net/svnroot/nzbget/trunk'
+  head "https://github.com/nzbget/nzbget.git"
 
-  depends_on 'pkg-config' => :build
-  depends_on 'libsigc++'
+  bottle do
+    sha256 "575aa6f2c1e7a0782a0d01a735641b398819eebeedb45fc79893a0d8d8a99e1a" => :yosemite
+    sha256 "4d9ba1a2d89d3f9cd2abccef3e3f3223c2e9d7a68582c1ea11eb20b0bcea37c0" => :mavericks
+    sha256 "34f2fa74cd448347f0161e7adfdcfec754b3991e5058aad826df565f55e9776d" => :mountain_lion
+  end
+
+  depends_on "pkg-config" => :build
+  depends_on "openssl"
+  depends_on "libsigc++"
 
   fails_with :clang do
     build 500
     cause <<-EOS.undent
-      Configure errors out when testing the libpar2 headers because
-      Clang does not support flexible arrays of non-POD types.
-      ./par2fileformat.h:87:25: error: flexible array member 'entries' of non-POD element type 'FILEVERIFICATIONENTRY []'
+      Clang older than 5.1 requires flexible array members to be POD types.
+      More recent versions require only that they be trivially destructible.
       EOS
   end
 
+  resource "libpar2" do
+    url "https://launchpad.net/libpar2/trunk/0.4/+download/libpar2-0.4.tar.gz"
+    sha256 "316d6f0eb31eb896f5546171c2e86801aeffe5ae5e2decffc17f0018346796d4"
+  end
+
   def install
-    # Install libpar2 privately
-    libpar2_prefix = libexec/'libpar2'
-    Libpar2.new('libpar2').brew do
-      system "./configure", "--disable-debug", "--disable-dependency-tracking",
-                            "--prefix=#{libpar2_prefix}"
-      system "make install"
+    resource("libpar2").stage do
+      system "./configure", "--disable-dependency-tracking",
+                            "--prefix=#{libexec}/lp2"
+      system "make", "install"
     end
 
     # Tell configure where libpar2 is, and tell it to use OpenSSL
     system "./configure", "--disable-debug", "--disable-dependency-tracking",
                           "--prefix=#{prefix}",
-                          "--with-libpar2-includes=#{libpar2_prefix}/include",
-                          "--with-libpar2-libraries=#{libpar2_prefix}/lib",
+                          "--with-libpar2-includes=#{libexec}/lp2/include",
+                          "--with-libpar2-libraries=#{libexec}/lp2/lib",
                           "--with-tlslib=OpenSSL"
     system "make"
     ENV.j1
-    system "make install"
-    system "make install-conf"
+    system "make", "install"
+    etc.install "nzbget.conf"
+  end
+
+  plist_options :manual => "nzbget"
+
+  def plist; <<-EOS.undent
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+      <key>Label</key>
+      <string>#{plist_name}</string>
+      <key>ProgramArguments</key>
+      <array>
+        <string>#{opt_bin}/nzbget</string>
+        <string>-s</string>
+        <string>-o</string>
+        <string>OutputMode=Log</string>
+      </array>
+      <key>RunAtLoad</key>
+      <true/>
+      <key>KeepAlive</key>
+      <true/>
+    </dict>
+    </plist>
+    EOS
+  end
+
+  test do
+    # Start nzbget as a server in daemon-mode
+    system "#{bin}/nzbget", "-D"
+    # Query server for version information
+    system "#{bin}/nzbget", "-V"
+    # Shutdown server daemon
+    system "#{bin}/nzbget", "-Q"
   end
 end

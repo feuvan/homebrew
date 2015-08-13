@@ -1,38 +1,28 @@
-require 'formula'
-
 class Portaudio < Formula
-  homepage 'http://www.portaudio.com'
-  url 'http://www.portaudio.com/archives/pa_stable_v19_20111121.tgz'
-  sha1 'f07716c470603729a55b70f5af68f4a6807097eb'
+  desc "Cross-platform library for audio I/O"
+  homepage "http://www.portaudio.com"
+  url "http://www.portaudio.com/archives/pa_stable_v19_20140130.tgz"
+  sha256 "8fe024a5f0681e112c6979808f684c3516061cc51d3acc0b726af98fc96c8d57"
+  head "https://subversion.assembla.com/svn/portaudio/portaudio/trunk/", :using => :svn
 
-  head 'https://subversion.assembla.com/svn/portaudio/portaudio/trunk/', :using => :svn
+  bottle do
+    cellar :any
+    sha1 "dd0697d98af452ef4508c80bb1148f2e8df21c7c" => :mavericks
+    sha1 "97a88511e3068a00350867b67cf272b54f118a85" => :mountain_lion
+    sha1 "b9ea51a124685cb8b872c7ec9f0cdc02bbdee8de" => :lion
+  end
 
-  depends_on 'pkg-config' => :build
+  depends_on "pkg-config" => :build
 
   option :universal
 
-  fails_with :llvm do
-    build 2334
-  end
-
-  # Fix PyAudio compilation on Lion
-  def patches
-    { :p0 =>
-      "https://trac.macports.org/export/94150/trunk/dports/audio/portaudio/files/patch-include__pa_mac_core.h.diff"
-    }
-  end if MacOS.version >= :lion and not build.head?
-
   def install
     ENV.universal_binary if build.universal?
-
-    args = [ "--prefix=#{prefix}",
-             "--disable-debug",
-             "--disable-dependency-tracking",
-             # portaudio builds universal unless told not to
-             "--enable-mac-universal=#{build.universal? ? 'yes' : 'no'}" ]
-
-    system "./configure", *args
-    system "make install"
+    system "./configure", "--prefix=#{prefix}",
+                          "--disable-debug",
+                          "--disable-dependency-tracking",
+                          "--enable-mac-universal=#{build.universal? ? "yes" : "no"}"
+    system "make", "install"
 
     # Need 'pa_mac_core.h' to compile PyAudio
     include.install "include/pa_mac_core.h"

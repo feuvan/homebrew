@@ -1,46 +1,51 @@
-require 'formula'
-
 class Nanomsg < Formula
-  homepage 'http://nanomsg.org'
-  url 'http://download.nanomsg.org/nanomsg-0.2-alpha.tar.gz'
-  version '0.2-alpha'
-  sha1 'ecdc7189787f6b000e94f29c648db1f292d872ac'
+  desc "Socket library in C"
+  homepage "http://nanomsg.org"
+  url "http://download.nanomsg.org/nanomsg-0.5-beta.tar.gz"
+  sha256 "13bff7ae8f31957722ee62d50504ce1a0c590da908f8566f997e3e521abb089f"
 
-  head do
-    url 'https://github.com/nanomsg/nanomsg.git'
-
-    depends_on :autoconf
-    depends_on :automake
+  bottle do
+    cellar :any
+    sha1 "3a645be193f896f1a3b4f8593c1554656abdc4c1" => :yosemite
+    sha1 "874eb890390defb22b89cbf4303d218d384bd9b6" => :mavericks
+    sha1 "66775cd465f4351a92cb05824e279ed597b90270" => :mountain_lion
   end
 
-  option 'with-test', 'Verify the build with make check'
-  option 'with-doc', 'Install man pages'
-  option 'without-nanocat', 'Do not install nanocat tool'
-  option 'with-debug', 'Compile with debug symbols'
+  head do
+    url "https://github.com/nanomsg/nanomsg.git"
 
-  depends_on 'pkg-config'=> :build
-  depends_on :libtool
+    depends_on "autoconf" => :build
+    depends_on "automake" => :build
+    depends_on "libtool" => :build
+  end
 
-  if build.with? 'doc'
-    depends_on 'asciidoc' => :build
-    depends_on 'xmlto' => :build
+  option "with-test", "Verify the build with make check"
+  option "with-doc", "Install man pages"
+  option "without-nanocat", "Do not install nanocat tool"
+  option "with-debug", "Compile with debug symbols"
+
+  depends_on "pkg-config" => :build
+
+  if build.with? "doc"
+    depends_on "asciidoc" => :build
+    depends_on "xmlto" => :build
   end
 
   def install
-    ENV['XML_CATALOG_FILES'] = "#{etc}/xml/catalog" if build.with? 'doc'
+    ENV["XML_CATALOG_FILES"] = "#{etc}/xml/catalog" if build.with? "doc"
 
-    system './autogen.sh' if build.head?
+    system "./autogen.sh" if build.head?
 
     args = ["--disable-dependency-tracking",
             "--disable-silent-rules",
             "--prefix=#{prefix}"]
-    args << "--disable-nanocat" if build.without? 'nanocat'
-    args << "--enable-debug" if build.with? 'debug'
-    args << "--enable-doc" if build.with? 'doc'
+    args << "--disable-nanocat" if build.without? "nanocat"
+    args << "--enable-debug" if build.with? "debug"
+    args << "--enable-doc" if build.with? "doc"
 
-    system './configure', *args
-    system 'make'
-    system 'make', '-j1', 'check' if build.with? 'test'
-    system 'make', 'install'
+    system "./configure", *args
+    system "make"
+    system "make", "-j1", "check" if build.with? "test"
+    system "make", "install"
   end
 end

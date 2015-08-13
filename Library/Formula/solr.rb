@@ -1,31 +1,49 @@
-require 'formula'
-
 class Solr < Formula
-  homepage 'http://lucene.apache.org/solr/'
-  url 'http://www.apache.org/dyn/closer.cgi?path=lucene/solr/4.5.1/solr-4.5.1.tgz'
-  sha1 '019153f18c28b2b4d966496438940e21a7f63daa'
+  desc "Enterprise search platform from the Apache Lucene project"
+  homepage "https://lucene.apache.org/solr/"
+  url "https://www.apache.org/dyn/closer.cgi?path=lucene/solr/5.2.1/solr-5.2.1.tgz"
+  mirror "https://archive.apache.org/dist/lucene/solr/5.2.1/solr-5.2.1.tgz"
+  sha256 "3f54cec862da1376857f96f4a6f2044a5addcebc4df159b8797fd71f7ba8df86"
 
-  def script; <<-EOS.undent
-    #!/bin/sh
-    if [ -z "$1" ]; then
-      echo "Usage: $ solr path/to/config/dir"
-    else
-      cd #{libexec}/example && java -server $JAVA_OPTS -Dsolr.solr.home=$1 -jar start.jar
-    fi
-    EOS
-  end
+  depends_on :java
+
+  skip_clean "example/logs"
 
   def install
-    libexec.install Dir['*']
-    (bin+'solr').write script
+    libexec.install Dir["*"]
+    bin.install "#{libexec}/bin/solr"
+    share.install "#{libexec}/bin/solr.in.sh"
+    prefix.install "#{libexec}/example"
+    prefix.install "#{libexec}/server"
   end
 
-  def caveats; <<-EOS.undent
-    To start solr:
-      solr path/to/solr/config/dir
+  plist_options :manual => "solr start"
 
-    See the solr homepage for more setup information:
-      brew home solr
+  def plist; <<-EOS.undent
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+          <key>Label</key>
+          <string>#{plist_name}</string>
+          <key>ProgramArguments</key>
+          <array>
+            <string>#{opt_bin}/solr</string>
+            <string>start</string>
+            <string>-f</string>
+          </array>
+          <key>ServiceDescription</key>
+          <string>#{name}</string>
+          <key>WorkingDirectory</key>
+          <string>#{HOMEBREW_PREFIX}</string>
+          <key>RunAtLoad</key>
+          <true/>
+      </dict>
+      </plist>
     EOS
+  end
+
+  test do
+    system "solr"
   end
 end

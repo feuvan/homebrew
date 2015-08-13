@@ -1,6 +1,7 @@
 require 'formula'
 
 class Monkeysphere < Formula
+  desc "Use the OpenPGP web of trust to verify ssh connections"
   homepage 'http://web.monkeysphere.info/'
   url 'http://archive.monkeysphere.info/debian/pool/monkeysphere/m/monkeysphere/monkeysphere_0.36.orig.tar.gz'
   sha1 'c4f950346040f7703cb4c6e8b32022f4361d0c9d'
@@ -9,7 +10,7 @@ class Monkeysphere < Formula
 
   depends_on 'Crypt::OpenSSL::Bignum' => :perl
 
-  def patches; DATA; end
+  patch :DATA
 
   def install
     ENV['PREFIX']="#{prefix}"

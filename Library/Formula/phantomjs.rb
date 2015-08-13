@@ -1,51 +1,43 @@
-require 'formula'
-
 class Phantomjs < Formula
-  homepage 'http://www.phantomjs.org/'
-  url 'https://phantomjs.googlecode.com/files/phantomjs-1.9.2-source.zip'
-  sha1 '08559acdbbe04e963632bc35e94c1a9a082b6da1'
+  desc "Headless WebKit scriptable with a JavaScript API"
+  homepage "http://www.phantomjs.org/"
+
+  stable do
+    url "https://github.com/ariya/phantomjs/archive/2.0.0.tar.gz"
+    sha256 "0a1338464ca37314037d139b3e0f7368325f5d8810628d9d9f2df9f9f535d407"
+
+    # Qt Yosemite build fix. Upstream commit/PR:
+    # https://qt.gitorious.org/qt/qtbase/commit/70e442
+    # https://github.com/ariya/phantomjs/pull/12934
+    patch do
+      url "https://gist.githubusercontent.com/mikemcquaid/db645f7cbeec4f3b1b2e/raw/e664ecc5c259344d5a73a84b52e472bf8ad3733e/phantomjs-yosemite.patch"
+      sha256 "f54bd1592185f031552d3ad5c8809ff27e8f3be4f1c05c81b59bf7dbc4a59de1"
+    end
+  end
 
   bottle do
     cellar :any
-    revision 2
-    sha1 'd8eb4bb44e8569af5ffaab1b05c1dc85d208a1ff' => :mavericks
-    sha1 'f74ef5926657f37f370eb03c86f7eda50c70b978' => :mountain_lion
-    sha1 'b36a4516eb360b1ce63eea5aad75c406afdbeb9d' => :lion
+    sha1 "f9dd71edb662479e0f832379368d4cd4878f940e" => :yosemite
+    sha1 "817ab92d4bfcd5496cf1c59173d48976610e5f70" => :mavericks
+    sha1 "887a96e55f67a3d350bc40f910926286c6cea240" => :mountain_lion
   end
 
-  def patches
-    DATA
-  end
+  head "https://github.com/ariya/phantomjs.git"
 
   def install
-    inreplace 'src/qt/preconfig.sh', '-arch x86', '-arch x86_64' if MacOS.prefer_64_bit?
-    args = ['--confirm', '--qt-config']
-    # we have to disable these to avoid triggering Qt optimization code
-    # that will fail in superenv (in --env=std, Qt seems aware of this)
-    args << '-no-3dnow -no-ssse3' if superenv?
-    system './build.sh', *args
-    bin.install 'bin/phantomjs'
-    (share+'phantomjs').install 'examples'
+    system "./build.sh", "--confirm", "--jobs", ENV.make_jobs,
+      "--qt-config", "-openssl-linked"
+    bin.install "bin/phantomjs"
+    (share+"phantomjs").install "examples"
+  end
+
+  test do
+    path = testpath/"test.js"
+    path.write <<-EOS
+      console.log("hello");
+      phantom.exit();
+    EOS
+
+    assert_equal "hello", shell_output("#{bin}/phantomjs #{path}").strip
   end
 end
-__END__
-diff --git a/src/qt/src/gui/kernel/qt_cocoa_helpers_mac_p.h b/src/qt/src/gui/kernel/qt_cocoa_helpers_mac_p.h
-index c068234..90d2ca0 100644
---- a/src/qt/src/gui/kernel/qt_cocoa_helpers_mac_p.h
-+++ b/src/qt/src/gui/kernel/qt_cocoa_helpers_mac_p.h
-@@ -110,6 +110,7 @@
- #include "private/qt_mac_p.h"
-
- struct HIContentBorderMetrics;
-+struct TabletProximityRec;
-
- #ifdef Q_WS_MAC32
- typedef struct _NSPoint NSPoint; // Just redefine here so I don't have to pull in all of Cocoa.
-@@ -155,7 +156,6 @@ bool qt_dispatchKeyEvent(void * /*NSEvent * */ keyEvent, QWidget *widgetToGetEve
- void qt_dispatchModifiersChanged(void * /*NSEvent * */flagsChangedEvent, QWidget *widgetToGetEvent);
- bool qt_mac_handleTabletEvent(void * /*QCocoaView * */view, void * /*NSEvent * */event);
- inline QApplication *qAppInstance() { return static_cast<QApplication *>(QCoreApplication::instance()); }
--struct ::TabletProximityRec;
- void qt_dispatchTabletProximityEvent(const ::TabletProximityRec &proxRec);
- Qt::KeyboardModifiers qt_cocoaModifiers2QtModifiers(ulong modifierFlags);
- Qt::KeyboardModifiers qt_cocoaDragOperation2QtModifiers(uint dragOperations);

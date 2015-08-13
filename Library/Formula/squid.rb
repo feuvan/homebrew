@@ -1,26 +1,21 @@
-require 'formula'
-
-class NoBdb5 < Requirement
-  satisfy(:build_env => false) { !Formula.factory("berkeley-db").installed? }
-
-  def message; <<-EOS.undent
-    This software can fail to compile when Berkeley-DB 5.x is installed.
-    You may need to try:
-      brew unlink berkeley-db
-      brew install squid
-      brew link berkeley-db
-    EOS
-  end
-end
-
 class Squid < Formula
-  homepage 'http://www.squid-cache.org/'
-  url 'http://www.squid-cache.org/Versions/v3/3.3/squid-3.3.10.tar.gz'
-  sha1 '2855dd88a6b0a37253a2f4aea77964c95f44bf7f'
+  desc "Advanced proxy caching server for HTTP, HTTPS, FTP, and Gopher"
+  homepage "http://www.squid-cache.org/"
+  url "http://www.squid-cache.org/Versions/v3/3.5/squid-3.5.7.tar.xz"
+  sha256 "ec6f861bddee007b1dd320667a26ddc9ff76847bbe4cbb59c0134588e65c8699"
 
-  depends_on NoBdb5
+  bottle do
+    sha256 "ab7daa5dcdbe372d9318ecb396188ba5f9ebc79fd7cd2b49dbff4feabefa1db8" => :yosemite
+    sha256 "e2a7a7c0a090fbc042024417cf5f6337bedc7c5422bd428c72bc7b9e1b580ffe" => :mavericks
+    sha256 "56d053ba7a36ad5d930452156db61e66d08b3baba645db5598fcd611be78539d" => :mountain_lion
+  end
+
+  depends_on "openssl"
 
   def install
+    # http://stackoverflow.com/questions/20910109/building-squid-cache-on-os-x-mavericks
+    ENV.append "LDFLAGS",  "-lresolv"
+
     # For --disable-eui, see:
     # http://squid-web-proxy-cache.1019090.n4.nabble.com/ERROR-ARP-MAC-EUI-operations-not-supported-on-this-operating-system-td4659335.html
     args = %W[
@@ -31,11 +26,13 @@ class Squid < Formula
       --enable-ssl
       --enable-ssl-crtd
       --disable-eui
-      --enable-ipfw-transparent
+      --enable-pf-transparent
+      --with-included-ltdl
+      --with-openssl
     ]
 
     system "./configure", *args
-    system "make install"
+    system "make", "install"
   end
 
   def plist; <<-EOS.undent
@@ -49,7 +46,7 @@ class Squid < Formula
       <string>#{plist_name}</string>
       <key>ProgramArguments</key>
       <array>
-        <string>#{opt_prefix}/sbin/squid</string>
+        <string>#{opt_sbin}/squid</string>
         <string>-N</string>
         <string>-d 1</string>
       </array>
@@ -60,5 +57,19 @@ class Squid < Formula
     </dict>
     </plist>
     EOS
+  end
+
+  test do
+    pid = fork do
+      exec "#{sbin}/squid"
+    end
+    sleep 2
+
+    begin
+      system "#{sbin}/squid", "-k", "check"
+    ensure
+      exec "#{sbin}/squid -k interrupt"
+      Process.wait(pid)
+    end
   end
 end

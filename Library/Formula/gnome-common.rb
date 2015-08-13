@@ -1,14 +1,11 @@
-require 'formula'
-
 class GnomeCommon < Formula
-  homepage 'http://git.gnome.org/browse/gnome-common/'
-  url 'http://ftp.gnome.org/pub/gnome/sources/gnome-common/3.10/gnome-common-3.10.0.tar.xz'
-  sha256 'aed69474a671e046523827f73ba5e936d57235b661db97900db7356e1e03b0a3'
-
-  depends_on 'xz' => :build
+  desc "Core files for GNOME"
+  homepage "http://git.gnome.org/browse/gnome-common/"
+  url "http://ftp.gnome.org/pub/gnome/sources/gnome-common/3.14/gnome-common-3.14.0.tar.xz"
+  sha256 "4c00242f781bb441289f49dd80ed1d895d84de0c94bfc2c6818a104c9e39262c"
 
   def install
     system "./configure", "--prefix=#{prefix}"
-    system "make install"
+    system "make", "install"
   end
 end

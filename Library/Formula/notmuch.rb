@@ -1,71 +1,56 @@
-require 'formula'
-
-class NewEnoughEmacs < Requirement
-  fatal true
-
-  def satisfied?
-    `emacs --version`.split("\n")[0] =~ /GNU Emacs (\d+)\./
-    major_version = ($1 || 0).to_i
-    major_version >= 23
-  end
-
-  def message
-    "Emacs support requires at least Emacs 23."
-  end
-end
-
 class Notmuch < Formula
-  homepage 'http://notmuchmail.org'
-  url 'http://notmuchmail.org/releases/notmuch-0.16.tar.gz'
-  sha1 '1919277b322d7aaffa81b80a64aedbb8a1c52a2b'
+  desc "Thread-based email index, search, and tagging"
+  homepage "http://notmuchmail.org"
+  url "http://notmuchmail.org/releases/notmuch-0.20.2.tar.gz"
+  sha256 "f741a26345bff389fd8a4a119c4174c6585730f71844809583a54ef2a865adec"
 
-  option "emacs", "Install emacs support."
+  bottle do
+    cellar :any
+    sha256 "71dec597c7bdc80560dae9a7be082f1338198e05ff58b11433f6ef5cee47c5c1" => :yosemite
+    sha256 "a5e09b5d4f8f441208d27769170d3bb75b55ea7c9c871a2d34ca2807af52f98f" => :mavericks
+    sha256 "78bd94ae533358108c9dfcebec77b8b3e77ba77f3056f536d0ebd4d2a1b648d5" => :mountain_lion
+  end
 
-  depends_on NewEnoughEmacs if build.include? "emacs"
-  depends_on 'pkg-config' => :build
-  depends_on 'xapian'
-  depends_on 'talloc'
-  depends_on 'gmime'
+  depends_on "pkg-config" => :build
+  depends_on "emacs" => :optional
+  depends_on :python => :optional
+  depends_on :python3 => :optional
+  depends_on "xapian"
+  depends_on "talloc"
+  depends_on "gmime"
 
-  def patches
-    p = []
-    # Fix for mkdir behavior change in 10.9: http://notmuchmail.org/pipermail/notmuch/2013/016388.html
-    p << DATA
-    # Fix for building with clang: http://git.notmuchmail.org/git/notmuch/commit/db465e443f3cd5ef3ba52304ab8b5dc6e0d7e620
-    p << "http://git.notmuchmail.org/git/notmuch/patch/db465e443f3cd5ef3ba52304ab8b5dc6e0d7e620"
+  # Requires zlib >= 1.2.5.2
+  resource "zlib" do
+    url "http://zlib.net/zlib-1.2.8.tar.gz"
+    sha256 "36658cb768a54c1d4dec43c3116c27ed893e88b02ecfcb44f2166f9c0b7f2a0d"
   end
 
   def install
+    resource("zlib").stage do
+      system "./configure", "--prefix=#{buildpath}/zlib", "--static"
+      system "make", "install"
+      ENV.append_path "PKG_CONFIG_PATH", "#{buildpath}/zlib/lib/pkgconfig"
+    end
+
     args = ["--prefix=#{prefix}"]
-    if build.include? "emacs"
+    if build.with? "emacs"
+      ENV.deparallelize # Emacs and parallel builds aren't friends
       args << "--with-emacs"
     else
       args << "--without-emacs"
     end
-    system "./configure", *args
 
+    system "./configure", *args
     system "make", "V=1", "install"
+
+    Language::Python.each_python(build) do |python, _version|
+      cd "bindings/python" do
+        system python, *Language::Python.setup_install_args(prefix)
+      end
+    end
+  end
+
+  test do
+    system "#{bin}/notmuch", "help"
   end
 end
-
-__END__
-diff --git a/Makefile.local b/Makefile.local
-index 72524eb..c85e09c 100644
---- a/Makefile.local
-+++ b/Makefile.local
-@@ -236,11 +236,11 @@ endif
- quiet ?= $($(shell echo $1 | sed -e s'/ .*//'))
- 
- %.o: %.cc $(global_deps)
--	@mkdir -p .deps/$(@D)
-+	@mkdir -p $(patsubst %/.,%,.deps/$(@D))
- 	$(call quiet,CXX $(CPPFLAGS) $(CXXFLAGS)) -c $(FINAL_CXXFLAGS) $< -o $@ -MD -MP -MF .deps/$*.d
- 
- %.o: %.c $(global_deps)
--	@mkdir -p .deps/$(@D)
-+	@mkdir -p $(patsubst %/.,%,.deps/$(@D))
- 	$(call quiet,CC $(CPPFLAGS) $(CFLAGS)) -c $(FINAL_CFLAGS) $< -o $@ -MD -MP -MF .deps/$*.d
- 
- .PHONY : clean
--- 
-1.8.4.2

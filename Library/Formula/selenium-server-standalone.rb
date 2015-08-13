@@ -1,15 +1,15 @@
-require 'formula'
-
 class SeleniumServerStandalone < Formula
-  homepage 'http://seleniumhq.org/'
-  url 'http://selenium.googlecode.com/files/selenium-server-standalone-2.39.0.jar'
-  sha1 'f2391600481dd285002d04b66916fc4286ff70ce'
+  desc "Browser automation for testing purposes"
+  homepage "http://seleniumhq.org/"
+  url "https://selenium-release.storage.googleapis.com/2.47/selenium-server-standalone-2.47.1.jar"
+  sha256 "45665f3bb4dffb668981258faff91823db4a1f6250fd24fd6698ec159a4aeb8a"
 
   def install
-    prefix.install "selenium-server-standalone-#{version}.jar"
+    libexec.install "selenium-server-standalone-#{version}.jar"
+    bin.write_jar_script libexec/"selenium-server-standalone-#{version}.jar", "selenium-server"
   end
 
-  plist_options :manual => "java -jar #{HOMEBREW_PREFIX}/opt/selenium-server-standalone/selenium-server-standalone-#{version}.jar -p 4444"
+  plist_options :manual => "selenium-server -p 4444"
 
   def plist; <<-EOS.undent
     <?xml version="1.0" encoding="UTF-8"?>
@@ -26,16 +26,16 @@ class SeleniumServerStandalone < Formula
       <array>
         <string>/usr/bin/java</string>
         <string>-jar</string>
-        <string>#{prefix}/selenium-server-standalone-#{version}.jar</string>
+        <string>#{libexec}/selenium-server-standalone-#{version}.jar</string>
         <string>-port</string>
         <string>4444</string>
       </array>
       <key>ServiceDescription</key>
       <string>Selenium Server</string>
       <key>StandardErrorPath</key>
-      <string>/var/log/selenium/selenium-error.log</string>
+      <string>#{var}/log/selenium-error.log</string>
       <key>StandardOutPath</key>
-      <string>/var/log/selenium/selenium-output.log</string>
+      <string>#{var}/log/selenium-output.log</string>
     </dict>
     </plist>
     EOS

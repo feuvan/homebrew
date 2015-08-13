@@ -1,80 +1,123 @@
-# encoding: UTF-8
-
-require 'cxxstdlib'
-require 'exceptions'
-require 'formula'
-require 'keg'
-require 'tab'
-require 'bottles'
-require 'caveats'
-require 'cleaner'
-require 'formula_cellar_checks'
-require 'install_renamed'
+require "cxxstdlib"
+require "exceptions"
+require "formula"
+require "keg"
+require "tab"
+require "bottles"
+require "caveats"
+require "cleaner"
+require "formula_cellar_checks"
+require "install_renamed"
+require "cmd/tap"
+require "cmd/postinstall"
+require "hooks/bottles"
+require "debrew"
+require "sandbox"
 
 class FormulaInstaller
   include FormulaCellarChecks
 
-  attr_reader :f
-  attr_accessor :tab, :options, :ignore_deps
-  attr_accessor :show_summary_heading, :show_header
+  def self.mode_attr_accessor(*names)
+    attr_accessor(*names)
+    private(*names)
+    names.each do |name|
+      predicate = "#{name}?"
+      define_method(predicate) { !!send(name) }
+      private(predicate)
+    end
+  end
 
-  def initialize ff
-    @f = ff
+  attr_reader :formula
+  attr_accessor :options
+  mode_attr_accessor :show_summary_heading, :show_header
+  mode_attr_accessor :build_from_source, :build_bottle, :force_bottle
+  mode_attr_accessor :ignore_deps, :only_deps, :interactive, :git
+  mode_attr_accessor :verbose, :debug, :quieter
+
+  def initialize(formula)
+    @formula = formula
     @show_header = false
-    @ignore_deps = ARGV.ignore_deps? || ARGV.interactive?
+    @ignore_deps = false
+    @only_deps = false
+    @build_from_source = false
+    @build_bottle = false
+    @force_bottle = false
+    @interactive = false
+    @git = false
+    @verbose = false
+    @quieter = false
+    @debug = false
     @options = Options.new
-    @tab = Tab.dummy_tab(ff)
 
     @@attempted ||= Set.new
 
     @poured_bottle = false
     @pour_failed   = false
+  end
 
+  def pour_bottle?(install_bottle_options = { :warn=>false })
+    return true if Homebrew::Hooks::Bottles.formula_has_bottle?(formula)
+
+    return false if @pour_failed
+
+    bottle = formula.bottle
+    return true  if force_bottle? && bottle
+    return false if build_from_source? || build_bottle? || interactive?
+    return false unless options.empty?
+    return true  if formula.local_bottle_path
+    return false if formula.file_modified?
+    return false unless bottle && formula.pour_bottle?
+
+    unless bottle.compatible_cellar?
+      if install_bottle_options[:warn]
+        opoo "Building source; cellar of #{formula.full_name}'s bottle is #{bottle.cellar}"
+      end
+      return false
+    end
+
+    true
+  end
+
+  def install_bottle_for?(dep, build)
+    return pour_bottle? if dep == formula
+    return false if build_from_source?
+    return false unless dep.bottle && dep.pour_bottle?
+    return false unless build.used_options.empty?
+    return false unless dep.bottle.compatible_cellar?
+    true
+  end
+
+  def prelude
+    verify_deps_exist unless ignore_deps?
     lock
     check_install_sanity
   end
 
-  def pour_bottle? install_bottle_options={:warn=>false}
-    return false if @pour_failed
-    tab.used_options.empty? && options.empty? && \
-      install_bottle?(f, install_bottle_options)
+  def verify_deps_exist
+    begin
+      formula.recursive_dependencies.map(&:to_formula)
+    rescue TapFormulaUnavailableError => e
+      if Homebrew.install_tap(e.user, e.repo)
+        retry
+      else
+        raise
+      end
+    end
+  rescue FormulaUnavailableError => e
+    e.dependent = formula.full_name
+    raise
   end
 
   def check_install_sanity
-    raise FormulaInstallationAlreadyAttemptedError, f if @@attempted.include? f
+    raise FormulaInstallationAlreadyAttemptedError, formula if @@attempted.include?(formula)
 
-    if f.installed?
-      msg = "#{f}-#{f.installed_version} already installed"
-      msg << ", it's just not linked" unless f.linked_keg.symlink? or f.keg_only?
-      raise FormulaAlreadyInstalledError, msg
-    end
-
-    # Building head-only without --HEAD is an error
-    if not ARGV.build_head? and f.stable.nil?
-      raise CannotInstallFormulaError, <<-EOS.undent
-        #{f} is a head-only formula
-        Install with `brew install --HEAD #{f.name}
-      EOS
-    end
-
-    # Building stable-only with --HEAD is an error
-    if ARGV.build_head? and f.head.nil?
-      raise CannotInstallFormulaError, "No head is defined for #{f.name}"
-    end
-
-    unless ignore_deps
-      unlinked_deps = f.recursive_dependencies.map(&:to_formula).select do |dep|
-        dep.installed? and not dep.keg_only? and not dep.linked_keg.directory?
+    unless ignore_deps?
+      unlinked_deps = formula.recursive_dependencies.map(&:to_formula).select do |dep|
+        dep.installed? && !dep.keg_only? && !dep.linked_keg.directory?
       end
       raise CannotInstallFormulaError,
-        "You must `brew link #{unlinked_deps*' '}' before #{f} can be installed" unless unlinked_deps.empty?
+        "You must `brew link #{unlinked_deps*" "}' before #{formula.full_name} can be installed" unless unlinked_deps.empty?
     end
-
-  rescue FormulaUnavailableError => e
-    # this is sometimes wrong if the dependency chain is more than one deep
-    # but can't easily fix this without a rewrite FIXME-brew2
-    e.dependent = f.name
-    raise
   end
 
   def build_bottle_preinstall
@@ -85,7 +128,7 @@ class FormulaInstaller
   def build_bottle_postinstall
     @etc_var_postinstall = Dir[@etc_var_glob]
     (@etc_var_postinstall - @etc_var_preinstall).each do |file|
-      Pathname.new(file).cp_path_sub(HOMEBREW_PREFIX, f.bottle_prefix)
+      Pathname.new(file).cp_path_sub(HOMEBREW_PREFIX, formula.bottle_prefix)
     end
   end
 
@@ -93,88 +136,97 @@ class FormulaInstaller
     # not in initialize so upgrade can unlink the active keg before calling this
     # function but after instantiating this class so that it can avoid having to
     # relink the active keg if possible (because it is slow).
-    if f.linked_keg.directory?
+    if formula.linked_keg.directory?
       # some other version is already installed *and* linked
       raise CannotInstallFormulaError, <<-EOS.undent
-        #{f}-#{f.linked_keg.realpath.basename} already installed
-        To install this version, first `brew unlink #{f}'
+        #{formula.name}-#{formula.linked_keg.resolved_path.basename} already installed
+        To install this version, first `brew unlink #{formula.name}'
       EOS
     end
 
     check_conflicts
 
-    compute_and_install_dependencies unless ignore_deps
+    compute_and_install_dependencies unless ignore_deps?
 
-    if ARGV.build_bottle? && (arch = ARGV.bottle_arch) && !Hardware::CPU.optimization_flags.include?(arch)
+    return if only_deps?
+
+    if build_bottle? && (arch = ARGV.bottle_arch) && !Hardware::CPU.optimization_flags.include?(arch)
       raise "Unrecognized architecture for --bottle-arch: #{arch}"
     end
 
-    oh1 "Installing #{Tty.green}#{f}#{Tty.reset}" if show_header
-
-    @@attempted << f
-
-    begin
-      if pour_bottle? :warn => true
-        pour
-        @poured_bottle = true
-
-        stdlibs = Keg.new(f.prefix).detect_cxx_stdlibs
-        stdlib_in_use = CxxStdlib.new(stdlibs.first, MacOS.default_compiler)
-        stdlib_in_use.check_dependencies(f, f.recursive_dependencies)
-
-        tab = Tab.for_keg f.prefix
-        tab.poured_from_bottle = true
-        tab.tabfile.delete if tab.tabfile
-        tab.write
-      end
-    rescue
-      raise if ARGV.homebrew_developer?
-      @pour_failed = true
-      opoo "Bottle installation failed: building from source."
+    formula.deprecated_flags.each do |deprecated_option|
+      old_flag = deprecated_option.old_flag
+      new_flag = deprecated_option.current_flag
+      opoo "#{formula.full_name}: #{old_flag} was deprecated; using #{new_flag} instead!"
     end
 
-    build_bottle_preinstall if ARGV.build_bottle?
+    oh1 "Installing #{Tty.green}#{formula.full_name}#{Tty.reset}" if show_header?
+
+    @@attempted << formula
+
+    if pour_bottle?(:warn => true)
+      begin
+        pour
+      rescue => e
+        raise if ARGV.homebrew_developer?
+        @pour_failed = true
+        onoe e.message
+        opoo "Bottle installation failed: building from source."
+      else
+        @poured_bottle = true
+      end
+    end
+
+    build_bottle_preinstall if build_bottle?
 
     unless @poured_bottle
-      compute_and_install_dependencies if @pour_failed and not ignore_deps
+      if formula.file_modified? && !build_from_source?
+        filename = formula.path.to_s.gsub("#{HOMEBREW_PREFIX}/", "")
+        opoo "Formula file is modified!"
+        puts "Building from source because #{filename} has local changes"
+        puts "To install from a bottle instead, run with --force-bottle"
+      end
+      compute_and_install_dependencies if @pour_failed && !ignore_deps?
       build
       clean
     end
 
-    build_bottle_postinstall if ARGV.build_bottle?
+    build_bottle_postinstall if build_bottle?
 
-    opoo "Nothing was installed to #{f.prefix}" unless f.installed?
-  end
-
-  # HACK: If readline is present in the dependency tree, it will clash
-  # with the stdlib's Readline module when the debugger is loaded
-  def perform_readline_hack
-    if f.recursive_dependencies.any? { |d| d.name == "readline" } && ARGV.debug?
-      ENV['HOMEBREW_NO_READLINE'] = '1'
-    end
+    opoo "Nothing was installed to #{formula.prefix}" unless formula.installed?
   end
 
   def check_conflicts
     return if ARGV.force?
 
-    conflicts = f.conflicts.reject do |c|
-      keg = Formula.factory(c.name).prefix
-      not keg.directory? && Keg.new(keg).linked?
+    conflicts = formula.conflicts.select do |c|
+      begin
+        f = Formulary.factory(c.name)
+      rescue TapFormulaUnavailableError
+        # If the formula name is in full-qualified name. Let's silently
+        # ignore it as we don't care about things used in taps that aren't
+        # currently tapped.
+        false
+      else
+        f.linked_keg.exist? && f.opt_prefix.exist?
+      end
     end
 
-    raise FormulaConflictError.new(f, conflicts) unless conflicts.empty?
+    raise FormulaConflictError.new(formula, conflicts) unless conflicts.empty?
   end
 
   def compute_and_install_dependencies
-    perform_readline_hack
-
     req_map, req_deps = expand_requirements
 
     check_requirements(req_map)
 
-    deps = [].concat(req_deps).concat(f.deps)
+    deps = expand_dependencies(req_deps + formula.deps)
 
-    install_dependencies expand_dependencies(deps)
+    if deps.empty? && only_deps?
+      puts "All dependencies for #{formula.full_name} are satisfied."
+    else
+      install_dependencies(deps)
+    end
   end
 
   def check_requirements(req_map)
@@ -187,360 +239,432 @@ class FormulaInstaller
       end
     end
 
-    raise UnsatisfiedRequirements.new(f, fatals) unless fatals.empty?
+    raise UnsatisfiedRequirements.new(fatals) unless fatals.empty?
+  end
+
+  def install_requirement_default_formula?(req, dependent, build)
+    return false unless req.default_formula?
+    return true unless req.satisfied?
+    return false if req.tags.include?(:run)
+    install_bottle_for?(dependent, build) || build_bottle?
   end
 
   def expand_requirements
     unsatisfied_reqs = Hash.new { |h, k| h[k] = [] }
     deps = []
-    formulae = [f]
+    formulae = [formula]
 
     while f = formulae.pop
+      f.recursive_requirements do |dependent, req|
+        build = effective_build_options_for(dependent)
 
-      ARGV.filter_for_dependencies do
-        f.recursive_requirements do |dependent, req|
-          if (req.optional? || req.recommended?) && dependent.build.without?(req)
-            Requirement.prune
-          elsif req.build? && install_bottle?(dependent)
-            Requirement.prune
-          elsif req.satisfied?
-            Requirement.prune
-          elsif req.default_formula?
-            dep = req.to_dependency
-            deps.unshift(dep)
-            formulae.unshift(dep.to_formula)
-            Requirement.prune
-          else
-            unsatisfied_reqs[dependent] << req
-          end
+        if (req.optional? || req.recommended?) && build.without?(req)
+          Requirement.prune
+        elsif req.build? && install_bottle_for?(dependent, build)
+          Requirement.prune
+        elsif install_requirement_default_formula?(req, dependent, build)
+          dep = req.to_dependency
+          deps.unshift(dep)
+          formulae.unshift(dep.to_formula)
+          Requirement.prune
+        elsif req.satisfied?
+          Requirement.prune
+        else
+          unsatisfied_reqs[dependent] << req
         end
       end
     end
 
-    return unsatisfied_reqs, deps
+    [unsatisfied_reqs, deps]
   end
 
   def expand_dependencies(deps)
-    # FIXME: can't check this inside the block for the top-level dependent
-    # because it depends on the contents of ARGV.
-    pour_bottle = pour_bottle?
+    inherited_options = {}
 
-    ARGV.filter_for_dependencies do
-      Dependency.expand(f, deps) do |dependent, dep|
-        dep.universal! if f.build.universal? && !dep.build?
+    expanded_deps = Dependency.expand(formula, deps) do |dependent, dep|
+      options = inherited_options[dep.name] = inherited_options_for(dep)
+      build = effective_build_options_for(
+        dependent,
+        inherited_options.fetch(dependent.name, [])
+      )
 
-        if (dep.optional? || dep.recommended?) && dependent.build.without?(dep)
-          Dependency.prune
-        elsif dep.build? && dependent == f && pour_bottle
-          Dependency.prune
-        elsif dep.build? && dependent != f && install_bottle?(dependent)
-          Dependency.prune
-        elsif dep.satisfied?
-          Dependency.skip
-        elsif dep.installed?
-          raise UnsatisfiedDependencyError.new(f, dep)
-        end
+      if (dep.optional? || dep.recommended?) && build.without?(dep)
+        Dependency.prune
+      elsif dep.build? && install_bottle_for?(dependent, build)
+        Dependency.prune
+      elsif dep.satisfied?(options)
+        Dependency.skip
       end
     end
+
+    expanded_deps.map { |dep| [dep, inherited_options[dep.name]] }
+  end
+
+  def effective_build_options_for(dependent, inherited_options = [])
+    args  = dependent.build.used_options
+    args |= dependent == formula ? options : inherited_options
+    args |= Tab.for_formula(dependent).used_options
+    BuildOptions.new(args, dependent.options)
+  end
+
+  def inherited_options_for(dep)
+    inherited_options = Options.new
+    u = Option.new("universal")
+    if (options.include?(u) || formula.require_universal_deps?) && !dep.build? && dep.to_formula.option_defined?(u)
+      inherited_options << u
+    end
+    inherited_options
   end
 
   def install_dependencies(deps)
     if deps.length > 1
-      oh1 "Installing dependencies for #{f}: #{Tty.green}#{deps*", "}#{Tty.reset}"
+      oh1 "Installing dependencies for #{formula.full_name}: #{Tty.green}#{deps.map(&:first)*", "}#{Tty.reset}"
     end
 
-    deps.each do |dep|
-      if dep.requested?
-       install_dependency(dep)
-      else
-        ARGV.filter_for_dependencies { install_dependency(dep) }
-      end
-    end
+    deps.each { |dep, options| install_dependency(dep, options) }
+
     @show_header = true unless deps.empty?
   end
 
-  def install_dependency dep
-    dep_tab = Tab.for_formula(dep.to_formula)
-    dep_options = dep.options
-    dep = dep.to_formula
+  class DependencyInstaller < FormulaInstaller
+    def initialize(*)
+      super
+      @ignore_deps = true
+    end
 
-    outdated_keg = Keg.new(dep.linked_keg.realpath) rescue nil
+    def sanitized_ARGV_options
+      args = super
+      args.delete "--ignore-dependencies"
+      args
+    end
+  end
 
-    fi = FormulaInstaller.new(dep)
-    fi.tab = dep_tab
-    fi.options = dep_options
-    fi.ignore_deps = true
-    fi.show_header = false
-    oh1 "Installing #{f} dependency: #{Tty.green}#{dep}#{Tty.reset}"
-    outdated_keg.unlink if outdated_keg
+  def install_dependency(dep, inherited_options)
+    df = dep.to_formula
+    tab = Tab.for_formula(df)
+
+    if df.linked_keg.directory?
+      linked_keg = Keg.new(df.linked_keg.resolved_path)
+      linked_keg.unlink
+    end
+
+    if df.installed?
+      installed_keg = Keg.new(df.prefix)
+      tmp_keg = Pathname.new("#{installed_keg}.tmp")
+      installed_keg.rename(tmp_keg)
+    end
+
+    fi = DependencyInstaller.new(df)
+    fi.options           |= tab.used_options
+    fi.options           |= Tab.remap_deprecated_options(df.deprecated_options, dep.options)
+    fi.options           |= inherited_options
+    fi.build_from_source  = build_from_source?
+    fi.verbose            = verbose? && !quieter?
+    fi.debug              = debug?
+    fi.prelude
+    oh1 "Installing #{formula.full_name} dependency: #{Tty.green}#{dep.name}#{Tty.reset}"
     fi.install
-    fi.caveats
     fi.finish
-  ensure
-    # restore previous installation state if build failed
-    outdated_keg.link if outdated_keg and not dep.installed? rescue nil
+  rescue Exception
+    ignore_interrupts do
+      tmp_keg.rename(installed_keg) if tmp_keg && !installed_keg.directory?
+      linked_keg.link if linked_keg
+    end
+    raise
+  else
+    ignore_interrupts { tmp_keg.rmtree if tmp_keg && tmp_keg.directory? }
   end
 
   def caveats
-    if ARGV.homebrew_developer? and not f.keg_only?
-      audit_bin
-      audit_sbin
-      audit_lib
-      audit_man
-      audit_info
-    end
+    return if only_deps?
 
-    c = Caveats.new(f)
+    audit_installed if ARGV.homebrew_developer? && !formula.keg_only?
+
+    c = Caveats.new(formula)
 
     unless c.empty?
       @show_summary_heading = true
-      ohai 'Caveats', c.caveats
+      ohai "Caveats", c.caveats
     end
   end
 
   def finish
-    ohai 'Finishing up' if ARGV.verbose?
+    return if only_deps?
+
+    ohai "Finishing up" if verbose?
 
     install_plist
 
-    if f.keg_only?
-      begin
-        Keg.new(f.prefix).optlink
-      rescue Exception
-        onoe "Failed to create: #{f.opt_prefix}"
-        puts "Things that depend on #{f} will probably not build."
+    keg = Keg.new(formula.prefix)
+    link(keg)
+    fix_install_names(keg)
+
+    if formula.post_install_defined?
+      if build_bottle?
+        ohai "Not running post_install as we're building a bottle"
+        puts "You can run it manually using `brew postinstall #{formula.full_name}`"
+      else
+        post_install
       end
-    else
-      link
     end
 
-    fix_install_names if OS.mac?
+    caveats
 
-    post_install
-
-    ohai "Summary" if ARGV.verbose? or show_summary_heading
+    ohai "Summary" if verbose? || show_summary_heading?
     puts summary
   ensure
-    unlock if hold_locks?
+    unlock
   end
 
   def emoji
-    ENV['HOMEBREW_INSTALL_BADGE'] || "\xf0\x9f\x8d\xba"
+    ENV["HOMEBREW_INSTALL_BADGE"] || "\xf0\x9f\x8d\xba"
   end
 
   def summary
     s = ""
-    s << "#{emoji}  " if MacOS.version >= :lion and not ENV['HOMEBREW_NO_EMOJI']
-    s << "#{f.prefix}: #{f.prefix.abv}"
+    s << "#{emoji}  " if MacOS.version >= :lion && !ENV["HOMEBREW_NO_EMOJI"]
+    s << "#{formula.prefix}: #{formula.prefix.abv}"
     s << ", built in #{pretty_duration build_time}" if build_time
     s
   end
 
   def build_time
-    @build_time ||= Time.now - @start_time unless pour_bottle? or ARGV.interactive? or @start_time.nil?
+    @build_time ||= Time.now - @start_time if @start_time && !interactive?
+  end
+
+  def sanitized_ARGV_options
+    args = []
+    args << "--ignore-dependencies" if ignore_deps?
+
+    if build_bottle?
+      args << "--build-bottle"
+      args << "--bottle-arch=#{ARGV.bottle_arch}" if ARGV.bottle_arch
+    end
+
+    args << "--git" if git?
+    args << "--interactive" if interactive?
+    args << "--verbose" if verbose?
+    args << "--debug" if debug?
+    args << "--cc=#{ARGV.cc}" if ARGV.cc
+
+    if ARGV.env
+      args << "--env=#{ARGV.env}"
+    elsif formula.env.std? || formula.recursive_dependencies.any? { |d| d.name == "scons" }
+      args << "--env=std"
+    end
+
+    if formula.head?
+      args << "--HEAD"
+    elsif formula.devel?
+      args << "--devel"
+    end
+
+    formula.options.each do |opt|
+      name  = opt.name[/\A(.+)=\z$/, 1]
+      value = ARGV.value(name)
+      args << "--#{name}=#{value}" if name && value
+    end
+
+    args
   end
 
   def build_argv
-    @build_argv ||= begin
-      opts = Options.coerce(ARGV.options_only)
-      unless opts.include? '--fresh'
-        opts.concat(options) # from a dependent formula
-        opts.concat(tab.used_options) # from a previous install
-      end
-      opts << Option.new("--build-from-source") # don't download bottle
-    end
+    sanitized_ARGV_options + options.as_flags
   end
 
   def build
-    FileUtils.rm Dir["#{HOMEBREW_LOGS}/#{f}/*"]
+    FileUtils.rm_rf(formula.logs)
 
     @start_time = Time.now
 
     # 1. formulae can modify ENV, so we must ensure that each
     #    installation has a pristine ENV when it starts, forking now is
     #    the easiest way to do this
-    # 2. formulae have access to __END__ the only way to allow this is
-    #    to make the formula script the executed script
-    read, write = IO.pipe
-    # I'm guessing this is not a good way to do this, but I'm no UNIX guru
-    ENV['HOMEBREW_ERROR_PIPE'] = write.to_i.to_s
-
     args = %W[
       nice #{RUBY_PATH}
       -W0
-      -I #{File.dirname(__FILE__)}
-      -rbuild
+      -I #{HOMEBREW_LOAD_PATH}
       --
-      #{f.path}
+      #{HOMEBREW_LIBRARY_PATH}/build.rb
+      #{formula.path}
     ].concat(build_argv)
 
-    # Ruby 2.0+ sets close-on-exec on all file descriptors except for
-    # 0, 1, and 2 by default, so we have to specify that we want the pipe
-    # to remain open in the child process.
-    args << { write => write } if RUBY_VERSION >= "2.0"
-
-    fork do
-      begin
-        read.close
-        exec(*args)
-      rescue Exception => e
-        Marshal.dump(e, write)
-        write.close
-        exit! 1
+    if Sandbox.available? && ARGV.sandbox?
+      if Sandbox.auto_disable?
+        Sandbox.print_autodisable_warning
+      else
+        Sandbox.print_sandbox_message
       end
     end
 
-    ignore_interrupts(:quietly) do # the fork will receive the interrupt and marshall it back
-      write.close
-      Process.wait
-      data = read.read
-      read.close
-      raise Marshal.load(data) unless data.nil? or data.empty?
-      raise Interrupt if $?.exitstatus == 130
-      raise "Suspicious installation failure" unless $?.success?
+    Utils.safe_fork do
+      if Sandbox.available? && ARGV.sandbox? && !Sandbox.auto_disable?
+        sandbox = Sandbox.new
+        formula.logs.mkpath
+        sandbox.record_log(formula.logs/"sandbox.build.log")
+        sandbox.allow_write_temp_and_cache
+        sandbox.allow_write_log(formula)
+        sandbox.allow_write_cellar(formula)
+        sandbox.exec(*args)
+      else
+        exec(*args)
+      end
     end
 
-    raise "Empty installation" if Dir["#{f.prefix}/*"].empty?
+    raise "Empty installation" if Dir["#{formula.prefix}/*"].empty?
 
   rescue Exception
     ignore_interrupts do
       # any exceptions must leave us with nothing installed
-      f.prefix.rmtree if f.prefix.directory?
-      f.rack.rmdir_if_possible
+      formula.prefix.rmtree if formula.prefix.directory?
+      formula.rack.rmdir_if_possible
     end
     raise
   end
 
-  def link
-    if f.linked_keg.directory? and f.linked_keg.realpath == f.prefix
-      opoo "This keg was marked linked already, continuing anyway"
-      # otherwise Keg.link will bail
-      f.linked_keg.unlink
+  def link(keg)
+    if formula.keg_only?
+      begin
+        keg.optlink
+      rescue Keg::LinkError => e
+        onoe "Failed to create #{formula.opt_prefix}"
+        puts "Things that depend on #{formula.full_name} will probably not build."
+        puts e
+        Homebrew.failed = true
+      end
+      return
     end
 
-    keg = Keg.new(f.prefix)
+    if keg.linked?
+      opoo "This keg was marked linked already, continuing anyway"
+      keg.remove_linked_keg_record
+    end
 
     begin
       keg.link
-    rescue Exception => e
+    rescue Keg::ConflictError => e
       onoe "The `brew link` step did not complete successfully"
       puts "The formula built, but is not symlinked into #{HOMEBREW_PREFIX}"
-      puts "You can try again using `brew link #{f.name}'"
+      puts e
       puts
       puts "Possible conflicting files are:"
       mode = OpenStruct.new(:dry_run => true, :overwrite => true)
       keg.link(mode)
-      ohai e, e.backtrace if ARGV.debug?
       @show_summary_heading = true
-      ignore_interrupts{ keg.unlink }
-      raise unless e.kind_of? RuntimeError
+      Homebrew.failed = true
+    rescue Keg::LinkError => e
+      onoe "The `brew link` step did not complete successfully"
+      puts "The formula built, but is not symlinked into #{HOMEBREW_PREFIX}"
+      puts e
+      puts
+      puts "You can try again using:"
+      puts "  brew link #{formula.name}"
+      @show_summary_heading = true
+      Homebrew.failed = true
+    rescue Exception => e
+      onoe "An unexpected error occurred during the `brew link` step"
+      puts "The formula built, but is not symlinked into #{HOMEBREW_PREFIX}"
+      puts e
+      puts e.backtrace if debug?
+      @show_summary_heading = true
+      ignore_interrupts { keg.unlink }
+      Homebrew.failed = true
+      raise
     end
   end
 
   def install_plist
-    return unless f.plist
-    # A plist may already exist if we are installing from a bottle
-    f.plist_path.unlink if f.plist_path.exist?
-    f.plist_path.write f.plist
-    f.plist_path.chmod 0644
+    return unless formula.plist
+    formula.plist_path.atomic_write(formula.plist)
+    formula.plist_path.chmod 0644
+    log = formula.var/"log"
+    log.mkpath if formula.plist.include? log.to_s
+  rescue Exception => e
+    onoe "Failed to install plist file"
+    ohai e, e.backtrace if debug?
+    Homebrew.failed = true
   end
 
-  def fix_install_names
-    keg = Keg.new(f.prefix)
-    keg.fix_install_names(:keg_only => f.keg_only?)
-
-    if @poured_bottle
-      keg.relocate_install_names Keg::PREFIX_PLACEHOLDER, HOMEBREW_PREFIX.to_s,
-        Keg::CELLAR_PLACEHOLDER, HOMEBREW_CELLAR.to_s, :keg_only => f.keg_only?
-    end
+  def fix_install_names(keg)
+    keg.fix_install_names(:keg_only => formula.keg_only?)
   rescue Exception => e
     onoe "Failed to fix install names"
     puts "The formula built, but you may encounter issues using it or linking other"
     puts "formula against it."
-    ohai e, e.backtrace if ARGV.debug?
+    ohai e, e.backtrace if debug?
+    Homebrew.failed = true
     @show_summary_heading = true
   end
 
   def clean
-    ohai "Cleaning" if ARGV.verbose?
-    if f.class.skip_clean_all?
-      opoo "skip_clean :all is deprecated"
-      puts "Skip clean was commonly used to prevent brew from stripping binaries."
-      puts "brew no longer strips binaries, if skip_clean is required to prevent"
-      puts "brew from removing empty directories, you should specify exact paths"
-      puts "in the formula."
-      return
-    end
-    Cleaner.new f
+    ohai "Cleaning" if verbose?
+    Cleaner.new(formula).clean
   rescue Exception => e
     opoo "The cleaning step did not complete successfully"
     puts "Still, the installation was successful, so we will link it into your prefix"
-    ohai e, e.backtrace if ARGV.debug?
+    ohai e, e.backtrace if debug?
+    Homebrew.failed = true
     @show_summary_heading = true
   end
 
   def post_install
-    f.post_install
+    Homebrew.run_post_install(formula)
   rescue Exception => e
     opoo "The post-install step did not complete successfully"
-    puts "You can try again using `brew postinstall #{f.name}`"
-    ohai e, e.backtrace if ARGV.debug?
+    puts "You can try again using `brew postinstall #{formula.full_name}`"
+    ohai e, e.backtrace if debug?
+    Homebrew.failed = true
     @show_summary_heading = true
   end
 
   def pour
-    if f.local_bottle_path
-      downloader = LocalBottleDownloadStrategy.new(f)
+    if Homebrew::Hooks::Bottles.formula_has_bottle?(formula)
+      return if Homebrew::Hooks::Bottles.pour_formula_bottle(formula)
+    end
+
+    if (bottle_path = formula.local_bottle_path)
+      downloader = LocalBottleDownloadStrategy.new(bottle_path)
     else
-      downloader = f.downloader
-      fetched = f.fetch
-      f.verify_download_integrity fetched
+      downloader = formula.bottle
+      downloader.verify_download_integrity(downloader.fetch)
     end
     HOMEBREW_CELLAR.cd do
       downloader.stage
     end
 
-    Dir["#{f.bottle_prefix}/{etc,var}/**/*"].each do |file|
-      path = Pathname.new(file)
+    keg = Keg.new(formula.prefix)
+    keg.relocate_install_names Keg::PREFIX_PLACEHOLDER, HOMEBREW_PREFIX.to_s,
+      Keg::CELLAR_PLACEHOLDER, HOMEBREW_CELLAR.to_s, :keg_only => formula.keg_only?
+
+    Pathname.glob("#{formula.bottle_prefix}/{etc,var}/**/*") do |path|
       path.extend(InstallRenamed)
-      path.cp_path_sub(f.bottle_prefix, HOMEBREW_PREFIX)
+      path.cp_path_sub(formula.bottle_prefix, HOMEBREW_PREFIX)
     end
-    FileUtils.rm_rf f.bottle_prefix
+    FileUtils.rm_rf formula.bottle_prefix
+
+    tab = Tab.for_keg(formula.prefix)
+
+    CxxStdlib.check_compatibility(
+      formula, formula.recursive_dependencies,
+      Keg.new(formula.prefix), tab.compiler
+    )
+
+    tab.tap = formula.tap
+    tab.poured_from_bottle = true
+    tab.write
   end
 
-  ## checks
-
-  def print_check_output warning_and_description
-    return unless warning_and_description
-    warning, description = *warning_and_description
-    opoo warning
-    puts description
-    @show_summary_heading = true
+  def audit_check_output(output)
+    if output
+      opoo output
+      @show_summary_heading = true
+    end
   end
 
-  def audit_bin
-    print_check_output(check_PATH(f.bin)) unless f.keg_only?
-    print_check_output(check_non_executables(f.bin))
-    print_check_output(check_generic_executables(f.bin))
-  end
-
-  def audit_sbin
-    print_check_output(check_PATH(f.sbin)) unless f.keg_only?
-    print_check_output(check_non_executables(f.sbin))
-    print_check_output(check_generic_executables(f.sbin))
-  end
-
-  def audit_lib
-    print_check_output(check_jars)
-    print_check_output(check_non_libraries)
-  end
-
-  def audit_man
-    print_check_output(check_manpages)
-  end
-
-  def audit_info
-    print_check_output(check_infopages)
+  def audit_installed
+    audit_check_output(check_PATH(formula.bin))
+    audit_check_output(check_PATH(formula.sbin))
+    super
   end
 
   private
@@ -551,10 +675,11 @@ class FormulaInstaller
 
   def lock
     if (@@locked ||= []).empty?
-      f.recursive_dependencies.each do |dep|
+      formula.recursive_dependencies.each do |dep|
         @@locked << dep.to_formula
-      end unless ignore_deps
-      @@locked.unshift(f)
+      end unless ignore_deps?
+      @@locked.unshift(formula)
+      @@locked.uniq!
       @@locked.each(&:lock)
       @hold_locks = true
     end
@@ -566,27 +691,5 @@ class FormulaInstaller
       @@locked.clear
       @hold_locks = false
     end
-  end
-end
-
-
-class Formula
-  def keg_only_text
-    s = "This formula is keg-only, so it was not symlinked into #{HOMEBREW_PREFIX}."
-    s << "\n\n#{keg_only_reason.to_s}"
-    if lib.directory? or include.directory?
-      s <<
-        <<-EOS.undent_________________________________________________________72
-
-
-        Generally there are no consequences of this for you. If you build your
-        own software and it requires this formula, you'll need to add to your
-        build variables:
-
-        EOS
-      s << "    LDFLAGS:  -L#{HOMEBREW_PREFIX}/opt/#{name}/lib\n" if lib.directory?
-      s << "    CPPFLAGS: -I#{HOMEBREW_PREFIX}/opt/#{name}/include\n" if include.directory?
-    end
-    s << "\n"
   end
 end

@@ -1,17 +1,18 @@
-require 'formula'
-
 class BerkeleyDb < Formula
-  homepage 'http://www.oracle.com/technology/products/berkeley-db/index.html'
-  url 'http://download.oracle.com/berkeley-db/db-5.3.21.tar.gz'
-  sha1 '32e43c4898c8996750c958a90c174bd116fcba83'
+  desc "High performance key/value database"
+  homepage "https://www.oracle.com/technology/products/berkeley-db/index.html"
+  url "http://download.oracle.com/berkeley-db/db-6.1.19.tar.gz"
+  sha256 "ad8aa5f9ede68118732f78718128e29e4d765e46a87dce54fa9143d9de8684ce"
 
-  option 'with-java', 'Compile with Java support.'
-  option 'enable-sql', 'Compile with SQL support.'
+  bottle do
+    cellar :any
+    sha1 "1e80c66e55a970b39829cc98e41f3252557d3736" => :yosemite
+    sha1 "296738e8b7d2d23fafc19f3eaad6693e18bab05d" => :mavericks
+    sha1 "9573e87c5c4a5bf39f89b712c59b5329cb7c0b41" => :mountain_lion
+  end
 
-  # Fix build under Xcode 4.6
-  # Double-underscore names are reserved, and __atomic_compare_exchange is now
-  # a built-in, so rename this to something non-conflicting.
-  def patches; DATA; end
+  option "with-java", "Compile with Java support."
+  option "enable-sql", "Compile with SQL support."
 
   def install
     # BerkeleyDB dislikes parallel builds
@@ -25,41 +26,17 @@ class BerkeleyDb < Formula
       --enable-cxx
       --enable-compat185
     ]
-    args << "--enable-java" if build.include? "with-java"
+    args << "--enable-java" if build.with? "java"
     args << "--enable-sql" if build.include? "enable-sql"
 
     # BerkeleyDB requires you to build everything from the build_unix subdirectory
-    cd 'build_unix' do
+    cd "build_unix" do
       system "../dist/configure", *args
-      system "make install"
+      system "make", "install"
 
       # use the standard docs location
       doc.parent.mkpath
-      mv prefix/'docs', doc
+      mv prefix/"docs", doc
     end
   end
 end
-
-__END__
-diff --git a/src/dbinc/atomic.h b/src/dbinc/atomic.h
-index 096176a..561037a 100644
---- a/src/dbinc/atomic.h
-+++ b/src/dbinc/atomic.h
-@@ -144,7 +144,7 @@ typedef LONG volatile *interlocked_val;
- #define	atomic_inc(env, p)	__atomic_inc(p)
- #define	atomic_dec(env, p)	__atomic_dec(p)
- #define	atomic_compare_exchange(env, p, o, n)	\
--	__atomic_compare_exchange((p), (o), (n))
-+	__atomic_compare_exchange_db((p), (o), (n))
- static inline int __atomic_inc(db_atomic_t *p)
- {
- 	int	temp;
-@@ -176,7 +176,7 @@ static inline int __atomic_dec(db_atomic_t *p)
-  * http://gcc.gnu.org/onlinedocs/gcc-4.1.0/gcc/Atomic-Builtins.html
-  * which configure could be changed to use.
-  */
--static inline int __atomic_compare_exchange(
-+static inline int __atomic_compare_exchange_db(
- 	db_atomic_t *p, atomic_value_t oldval, atomic_value_t newval)
- {
- 	atomic_value_t was;

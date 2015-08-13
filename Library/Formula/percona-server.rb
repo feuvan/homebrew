@@ -1,29 +1,35 @@
-require 'formula'
-
 class PerconaServer < Formula
-  homepage 'http://www.percona.com'
-  url 'http://www.percona.com/redir/downloads/Percona-Server-5.6/LATEST/source/Percona-Server-5.6.14-rel62.0.tar.gz'
-  version '5.6.14-rel62.0'
-  sha1 '6d9ddd92338c70ec13bdeb9a23568a990a5766f9'
+  desc "Drop-in MySQL replacement"
+  homepage "https://www.percona.com"
+  url "https://www.percona.com/downloads/Percona-Server-5.6/Percona-Server-5.6.25-73.1/source/tarball/percona-server-5.6.25-73.1.tar.gz"
+  version "5.6.25-73.1"
+  sha256 "5a0d88465e4bb081e621b06bc943fafadb4c67a2cca50839b44fcd94ae793b50"
 
-  depends_on 'cmake' => :build
-  depends_on 'pidof' unless MacOS.version >= :mountain_lion
+  bottle do
+    sha256 "f1ecbe431098b4618e448634dba41a75f8ed0fada773344b469e9c9e3db653df" => :yosemite
+    sha256 "5f2e8564ea19bdca58b522fb0ca2c24835fd27a3d1b0c5aaf64641f69c62c474" => :mavericks
+    sha256 "8bb2a50aedda323875f2955bd7cafe75e5e63b24596dfb8b090e88814b85befa" => :mountain_lion
+  end
 
   option :universal
-  option 'with-tests', 'Build with unit tests'
-  option 'with-embedded', 'Build the embedded server'
-  option 'with-memcached', 'Build with InnoDB Memcached plugin'
-  option 'enable-local-infile', 'Build with local infile loading support'
+  option "with-tests", "Build with unit tests"
+  option "with-embedded", "Build the embedded server"
+  option "with-memcached", "Build with InnoDB Memcached plugin"
+  option "with-local-infile", "Build with local infile loading support"
 
-  conflicts_with 'mysql-connector-c',
-    :because => 'both install `mysql_config`'
+  deprecated_option "enable-local-infile" => "with-local-infile"
 
-  conflicts_with 'mariadb', 'mysql', 'mysql-cluster',
+  depends_on "cmake" => :build
+  depends_on "pidof" unless MacOS.version >= :mountain_lion
+  depends_on "openssl"
+
+  conflicts_with "mysql-connector-c",
+    :because => "both install `mysql_config`"
+
+  conflicts_with "mariadb", "mysql", "mysql-cluster",
     :because => "percona, mariadb, and mysql install the same binaries."
-  conflicts_with 'mysql-connector-c',
-    :because => 'both install MySQL client libraries'
-
-  env :std if build.universal?
+  conflicts_with "mysql-connector-c",
+    :because => "both install MySQL client libraries"
 
   fails_with :llvm do
     build 2334
@@ -34,14 +40,11 @@ class PerconaServer < Formula
   # under var/percona, but going forward they will be under var/msyql to be
   # shared with the mysql and mariadb formulae.
   def datadir
-    @datadir ||= (var/'percona').directory? ? var/'percona' : var/'mysql'
+    @datadir ||= (var/"percona").directory? ? var/"percona" : var/"mysql"
   end
 
-  def patches
-    # Fixes percona server 5.6 compilation on OS X 10.9, based on
-    # https://github.com/Homebrew/homebrew/commit/aad5d93f4fabbf69766deb83780d3a6eeab7061a
-    # for mysql 5.6
-    "https://gist.github.com/israelshirk/7cc640498cf264ebfce3/raw/846839c84647c4190ad683e4cbf0fabcd8931f97/gistfile1.txt"
+  def pour_bottle?
+    datadir == var/"mysql"
   end
 
   def install
@@ -82,58 +85,58 @@ class PerconaServer < Formula
     ]
 
     # To enable unit testing at build, we need to download the unit testing suite
-    if build.with? 'tests'
+    if build.with? "tests"
       args << "-DENABLE_DOWNLOADS=ON"
     else
       args << "-DWITH_UNIT_TESTS=OFF"
     end
 
     # Build the embedded server
-    args << "-DWITH_EMBEDDED_SERVER=ON" if build.with? 'embedded'
+    args << "-DWITH_EMBEDDED_SERVER=ON" if build.with? "embedded"
 
     # Build with InnoDB Memcached plugin
-    args << "-DWITH_INNODB_MEMCACHED=ON" if build.with? 'memcached'
+    args << "-DWITH_INNODB_MEMCACHED=ON" if build.with? "memcached"
 
     # Make universal for binding to universal applications
-    args << "-DCMAKE_OSX_ARCHITECTURES='#{Hardware::CPU.universal_archs.as_cmake_arch_flags}'" if build.universal?
+    if build.universal?
+      ENV.universal_binary
+      args << "-DCMAKE_OSX_ARCHITECTURES=#{Hardware::CPU.universal_archs.as_cmake_arch_flags}"
+    end
 
     # Build with local infile loading support
-    args << "-DENABLED_LOCAL_INFILE=1" if build.include? 'enable-local-infile'
+    args << "-DENABLED_LOCAL_INFILE=1" if build.with? "local-infile"
 
     system "cmake", *args
     system "make"
-    # Reported upstream:
-    # http://bugs.mysql.com/bug.php?id=69645
-    inreplace "scripts/mysql_config", / +-Wno[\w-]+/, ""
-    system "make install"
+    system "make", "install"
 
     # Don't create databases inside of the prefix!
     # See: https://github.com/Homebrew/homebrew/issues/4975
-    rm_rf prefix+'data'
+    rm_rf prefix+"data"
 
     # Link the setup script into bin
-    ln_s prefix+'scripts/mysql_install_db', bin+'mysql_install_db'
+    bin.install_symlink prefix/"scripts/mysql_install_db"
 
     # Fix up the control script and link into bin
     inreplace "#{prefix}/support-files/mysql.server" do |s|
       s.gsub!(/^(PATH=".*)(")/, "\\1:#{HOMEBREW_PREFIX}/bin\\2")
       # pidof can be replaced with pgrep from proctools on Mountain Lion
-      s.gsub!(/pidof/, 'pgrep') if MacOS.version >= :mountain_lion
+      s.gsub!(/pidof/, "pgrep") if MacOS.version >= :mountain_lion
     end
 
-    ln_s "#{prefix}/support-files/mysql.server", bin
+    bin.install_symlink prefix/"support-files/mysql.server"
 
     # Move mysqlaccess to libexec
+    libexec.mkpath
     mv "#{bin}/mysqlaccess", libexec
     mv "#{bin}/mysqlaccess.conf", libexec
-
-    # Make sure that data directory exists
-    datadir.mkpath
   end
 
   def post_install
+    # Make sure that data directory exists
+    datadir.mkpath
     unless File.exist? "#{datadir}/mysql/user.frm"
-      ENV['TMPDIR'] = nil
+      ENV["TMPDIR"] = nil
       system "#{bin}/mysql_install_db", "--verbose", "--user=#{ENV["USER"]}",
         "--basedir=#{prefix}", "--datadir=#{datadir}", "--tmpdir=/tmp"
     end
@@ -148,7 +151,7 @@ class PerconaServer < Formula
     EOS
   end
 
-  plist_options :manual => 'mysql.server start'
+  plist_options :manual => "mysql.server start"
 
   def plist; <<-EOS.undent
     <?xml version="1.0" encoding="UTF-8"?>
@@ -160,7 +163,7 @@ class PerconaServer < Formula
       <key>Label</key>
       <string>#{plist_name}</string>
       <key>Program</key>
-      <string>#{opt_prefix}/bin/mysqld_safe</string>
+      <string>#{opt_bin}/mysqld_safe</string>
       <key>RunAtLoad</key>
       <true/>
       <key>WorkingDirectory</key>

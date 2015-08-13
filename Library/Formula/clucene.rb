@@ -1,42 +1,34 @@
-require 'formula'
-
 class Clucene < Formula
-  homepage 'http://clucene.sourceforge.net'
-  url 'http://downloads.sourceforge.net/project/clucene/clucene-core-stable/0.9.21b/clucene-core-0.9.21b.tar.bz2'
-  sha1 '8bc505b64f82723c2dc901036cb0607500870973'
+  desc "C++ port of Lucene: high-performance, full-featured text search engine"
+  homepage "http://clucene.sourceforge.net"
+  url "https://downloads.sourceforge.net/project/clucene/clucene-core-unstable/2.3/clucene-core-2.3.3.4.tar.gz"
+  sha256 "ddfdc433dd8ad31b5c5819cc4404a8d2127472a3b720d3e744e8c51d79732eab"
 
-  head do
-    url 'git://clucene.git.sourceforge.net/gitroot/clucene/clucene'
-    depends_on 'cmake' => :build
+  bottle do
+    cellar :any
+    sha1 "80b58c05e8acc9b2848a57da7e052bf1a15812d9" => :mavericks
+    sha1 "ba66e4b9422e8ad12b16c19589fde50198c5c700" => :mountain_lion
+    sha1 "0564c414eca5a3d65eb8a217c03c114ffba1641e" => :lion
   end
 
-  def patches
-    if MacOS.version >= :mavericks
-      # Fix libpthread dependencies in OS X 10.9
-      # Based on MacPorts patches: http://trac.macports.org/ticket/40899
-      # Reported upstream: http://sourceforge.net/p/clucene/bugs/219/
-      if build.head?
-        'https://gist.github.com/lfranchi/7954811/raw/828176c01a8f2c1c11eff43bf6773242955dabab/CLucene-HEAD-mavericks.patch'
-      else
-        {:p0 => [
-          'https://gist.github.com/tlvince/7934499/raw/d0859996dbda8f4cf643d091ae6b491f0a64da59/CLucene-LuceneThreads.h.diff',
-          'https://gist.github.com/tlvince/7935339/raw/fd78b1ada278eaf1904e1437efa0f2a1265041a9/CLucene-config-repl_tchar.h.diff'
-        ]}
-      end
-    end
+  head "git://clucene.git.sourceforge.net/gitroot/clucene/clucene"
+
+  depends_on "cmake" => :build
+
+  # Portability fixes for 10.9+
+  # Upstream ticket: http://sourceforge.net/p/clucene/bugs/219/
+  patch do
+    url "https://trac.macports.org/export/126047/trunk/dports/devel/clucene/files/patch-src-shared-CLucene-LuceneThreads.h.diff"
+    sha256 "42cb23fa6bd66ca8ea1d83a57a650f71e0ad3d827f5d74837b70f7f72b03b490"
+  end
+
+  patch do
+    url "https://trac.macports.org/export/126047/trunk/dports/devel/clucene/files/patch-src-shared-CLucene-config-repl_tchar.h.diff"
+    sha256 "b7dc735f431df409aac63dcfda9737726999eed4fdae494e9cbc1d3309e196ad"
   end
 
   def install
-    if build.head?
-      system "cmake", ".", *std_cmake_args
-    else
-      system "./configure", "--disable-debug", "--disable-dependency-tracking",
-                            "--prefix=#{prefix}"
-    end
-
-    # Serialize the install step. See:
-    # https://github.com/Homebrew/homebrew/issues/8712
-    ENV.j1
-    system "make install"
+    system "cmake", ".", *std_cmake_args
+    system "make", "install"
   end
 end

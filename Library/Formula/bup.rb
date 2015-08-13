@@ -1,21 +1,33 @@
-require 'formula'
-
 class Bup < Formula
-  homepage 'https://github.com/bup/bup'
-  head 'https://github.com/bup/bup.git', :branch => 'master'
-  url 'https://github.com/bup/bup/archive/0.25-rc4.tar.gz'
-  version '0.25-rc4'
-  sha1 '12f382dcb7e1d3b8496dfc32d2395e80cf5d971e'
+  desc "Backup tool"
+  homepage "https://github.com/bup/bup"
+  url "https://github.com/bup/bup/archive/0.27.tar.gz"
+  sha256 "ae8a744a3415ce4766d1d896f3d48b9b2ae6167c7bc65d8d1a112f37b42720fb"
 
-  option "run-tests", "Run unit tests after compilation"
+  head "https://github.com/bup/bup.git"
 
-  depends_on :python
+  bottle do
+    cellar :any
+    sha256 "3cf4a28be9d177fe8db9be897981a61fddb98c5b4e98bddc6cc2b5a9967324b0" => :yosemite
+    sha256 "e37ae889d53612d81f29a747367595f8ef17e04aea91aee2a564d452c9b43cc1" => :mavericks
+    sha256 "9c7b4eda48367a6c62786e8c74aa1b455ecc9525a6431d2a2837d13fb592c0f6" => :mountain_lion
+  end
+
+  option "with-tests", "Run unit tests after compilation"
+  option "with-pandoc", "Build and install the manpages"
+
+  deprecated_option "run-tests" => "with-tests"
+
+  depends_on "pandoc" => [:optional, :build]
 
   def install
-    python do
-      system "make"
-    end
-    system "make test" if build.include? "run-tests"
+    system "make"
+    system "make", "test" if build.with? "tests"
     system "make", "install", "DESTDIR=#{prefix}", "PREFIX="
+  end
+
+  test do
+    system bin/"bup", "init"
+    assert File.exist?("#{testpath}/.bup")
   end
 end

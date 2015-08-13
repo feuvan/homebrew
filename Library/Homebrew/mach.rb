@@ -21,26 +21,26 @@ module ArchitectureListExtension
   end
 
   def ppc?
-    (Hardware::CPU::PPC_32BIT_ARCHS+Hardware::CPU::PPC_64BIT_ARCHS).any? {|a| self.include? a}
+    (Hardware::CPU::PPC_32BIT_ARCHS+Hardware::CPU::PPC_64BIT_ARCHS).any? { |a| self.include? a }
   end
 
   def remove_ppc!
-    (Hardware::CPU::PPC_32BIT_ARCHS+Hardware::CPU::PPC_64BIT_ARCHS).each {|a| self.delete a}
+    (Hardware::CPU::PPC_32BIT_ARCHS+Hardware::CPU::PPC_64BIT_ARCHS).each { |a| delete a }
   end
 
   def as_arch_flags
-    self.collect{ |a| "-arch #{a}" }.join(' ')
+    collect { |a| "-arch #{a}" }.join(" ")
   end
 
   def as_cmake_arch_flags
-    self.join(';')
+    join(";")
   end
 
   protected
 
   def intersects_all?(*set)
     set.all? do |archset|
-      archset.any? {|a| self.include? a}
+      archset.any? { |a| self.include? a }
     end
   end
 end
@@ -101,7 +101,7 @@ module MachO
   end
 
   def archs
-    mach_data.map{ |m| m.fetch :arch }.extend(ArchitectureListExtension)
+    mach_data.map { |m| m.fetch :arch }.extend(ArchitectureListExtension)
   end
 
   def arch
@@ -144,27 +144,47 @@ module MachO
     mach_data.any? { |m| m.fetch(:type) == :bundle }
   end
 
+  class Metadata
+    attr_reader :path, :dylib_id, :dylibs
+
+    def initialize(path)
+      @path = path
+      @dylib_id, @dylibs = parse_otool_L_output
+    end
+
+    def parse_otool_L_output
+      ENV["HOMEBREW_MACH_O_FILE"] = path.expand_path.to_s
+      libs = `#{MacOS.locate("otool")} -L "$HOMEBREW_MACH_O_FILE"`.split("\n")
+      unless $?.success?
+        raise ErrorDuringExecution.new(MacOS.locate("otool"),
+          ["-L", ENV["HOMEBREW_MACH_O_FILE"]])
+      end
+
+      libs.shift # first line is the filename
+
+      id = libs.shift[OTOOL_RX, 1] if path.dylib?
+      libs.map! { |lib| lib[OTOOL_RX, 1] }.compact!
+
+      return id, libs
+    ensure
+      ENV.delete "HOMEBREW_MACH_O_FILE"
+    end
+  end
+
+  def mach_metadata
+    @mach_metadata ||= Metadata.new(self)
+  end
+
   # Returns an array containing all dynamically-linked libraries, based on the
   # output of otool. This returns the install names, so these are not guaranteed
   # to be absolute paths.
   # Returns an empty array both for software that links against no libraries,
   # and for non-mach objects.
   def dynamically_linked_libraries
-    # Use an environment variable to avoid escaping problems
-    ENV['HOMEBREW_MACH_O_FILE'] = expand_path.to_s
+    mach_metadata.dylibs
+  end
 
-    libs = `#{MacOS.locate("otool")} -L "$HOMEBREW_MACH_O_FILE"`.split("\n")
-
-    # First line is the filename
-    libs.shift
-
-    # For dylibs, the next line is the ID
-    libs.shift if dylib?
-
-    libs.map! { |lib| lib[OTOOL_RX, 1] }
-    libs.compact!
-    libs
-  ensure
-    ENV.delete 'HOMEBREW_MACH_O_FILE'
+  def dylib_id
+    mach_metadata.dylib_id
   end
 end

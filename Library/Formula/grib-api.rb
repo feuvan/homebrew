@@ -1,27 +1,35 @@
-require 'formula'
-
 class GribApi < Formula
-  homepage 'https://software.ecmwf.int/wiki/display/GRIB/Home'
-  url 'https://software.ecmwf.int/wiki/download/attachments/3473437/grib_api-1.9.18.tar.gz'
-  sha1 '87616917a6978a56ae4fe173a3e6e3828b0ebfba'
+  desc "Encode and decode grib messages (editions 1 and 2)"
+  homepage "https://software.ecmwf.int/wiki/display/GRIB/Home"
+  url "https://software.ecmwf.int/wiki/download/attachments/3473437/grib_api-1.13.1.tar.gz"
+  sha256 "aa66c4d744f3073b06792c0e6299fcae99aa2a921f8b59a9ccd9056bf26baf5f"
+
+  bottle do
+    sha256 "bca2414b4550d8cd07636440635fdba4673fe98a3225a7d12bf257d6115d3155" => :yosemite
+    sha256 "57aff6f17cc19706e4e8a65b2e920521a30923ab232b8ba7cad12019e8e68505" => :mavericks
+    sha256 "cf7953a2b3a265d3a656e590f50dee80f7ce337b510834bf53313b702b700547" => :mountain_lion
+  end
 
   depends_on :fortran
-  depends_on 'jasper' => :recommended
-  depends_on 'openjpeg' => :optional
+  depends_on "cmake" => :build
+  depends_on "jasper" => :recommended
+  depends_on "openjpeg" => :optional
 
   # Fixes build errors in Lion
   # https://software.ecmwf.int/wiki/plugins/viewsource/viewpagesrc.action?pageId=12648475
-  def patches
-    DATA
-  end
+  patch :DATA
 
   def install
-    ENV.deparallelize
-    ENV.no_optimization
+    mkdir "build" do
+      system "cmake", "..", *std_cmake_args
+      system "make", "install"
+    end
+  end
 
-    system "./configure", "--prefix=#{prefix}"
-    system "make"
-    system "make install"
+  test do
+    grib_samples_path = shell_output("#{bin}/grib_info -t").strip
+    system "#{bin}/grib_ls", "#{grib_samples_path}/GRIB1.tmpl"
+    system "#{bin}/grib_ls", "#{grib_samples_path}/GRIB2.tmpl"
   end
 end
 

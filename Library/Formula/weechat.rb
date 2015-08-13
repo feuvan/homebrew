@@ -1,57 +1,45 @@
-require 'formula'
-
 class Weechat < Formula
-  homepage 'http://www.weechat.org'
-  url 'http://www.weechat.net/files/src/weechat-0.4.2.tar.bz2'
-  sha1 '837892c8eb24b3d7de26e17e87aafe88d7da0862'
+  desc "Extensible IRC client"
+  homepage "https://www.weechat.org"
+  url "https://weechat.org/files/src/weechat-1.2.tar.gz"
+  sha256 "0f9b00e3fe4d0a4e864111d4231e1756f7be5c1b2b6d17da43bd785ab9f035d8"
 
-  head 'git://git.savannah.nongnu.org/weechat.git'
+  head "https://github.com/weechat/weechat.git"
 
-  depends_on 'cmake' => :build
-  depends_on 'gnutls'
-  depends_on 'libgcrypt'
-  depends_on 'guile' => :optional
-  depends_on 'aspell' => :optional
-  depends_on 'lua' => :optional
-  depends_on :python => :optional
-
-  option 'with-perl', 'Build the perl module'
-  option 'with-ruby', 'Build the ruby module'
-
-  # cmake finds brewed python when installed, but when searching for the
-  # libraries it searches for system libraries first. This patch disables
-  # default search paths and ensures that brewed python is found first, if not
-  # it falls back to system python.
-  def patches
-    DATA
+  bottle do
+    sha256 "76442d9f00e028e17d4188bd7c9e48fce5092f13dc200ac6644da5484e539151" => :yosemite
+    sha256 "7a45ae6e8e6f40a3fe7acc71b694cfbee64db8d525d5d439eed6edc80b94aef5" => :mavericks
+    sha256 "e93668032407955e73e3fea60ce79d6f4a00fe39f98e8e5a1b862951f6146caf" => :mountain_lion
   end
 
+  option "with-perl", "Build the perl module"
+  option "with-ruby", "Build the ruby module"
+  option "with-curl", "Build with brewed curl"
+
+  depends_on "cmake" => :build
+  depends_on "gnutls"
+  depends_on "libgcrypt"
+  depends_on "gettext"
+  depends_on "guile" => :optional
+  depends_on "aspell" => :optional
+  depends_on "lua" => :optional
+  depends_on :python => :optional
+  depends_on "curl" => :optional
+
   def install
-    args = std_cmake_args + %W[
-      -DPREFIX=#{prefix}
-      -DENABLE_GTK=OFF
-    ]
-    args << '-DENABLE_LUA=OFF'    unless build.with? 'lua'
-    args << '-DENABLE_PERL=OFF'   unless build.with? 'perl'
-    args << '-DENABLE_RUBY=OFF'   unless build.with? 'ruby'
-    args << '-DENABLE_ASPELL=OFF' unless build.with? 'aspell'
-    args << '-DENABLE_GUILE=OFF'  unless build.with? 'guile'
+    args = std_cmake_args
 
-    # NLS/gettext support disabled for now since it doesn't work in stdenv
-    # see https://github.com/Homebrew/homebrew/issues/18722
-    args << "-DENABLE_NLS=OFF"
-    args << '..'
+    args << "-DENABLE_LUA=OFF" if build.without? "lua"
+    args << "-DENABLE_PERL=OFF" if build.without? "perl"
+    args << "-DENABLE_RUBY=OFF" if build.without? "ruby"
+    args << "-DENABLE_ASPELL=OFF" if build.without? "aspell"
+    args << "-DENABLE_GUILE=OFF" if build.without? "guile"
+    args << "-DENABLE_PYTHON=OFF" if build.without? "python"
+    args << "-DENABLE_JAVASCRIPT=OFF"
 
-    mkdir 'build' do
-      if python do
-        system 'cmake', *args
-      end
-      else
-        # The same cmake call but without any python set up.
-        args << '-DENABLE_PYTHON=OFF'
-        system 'cmake', *args
-      end
-      system 'make install'
+    mkdir "build" do
+      system "cmake", "..", *args
+      system "make", "install"
     end
   end
 
@@ -62,26 +50,9 @@ class Weechat < Formula
       automatically as part of weechat, there won't be any dictionaries.
     EOS
   end
-end
 
-__END__
---- weechat-0.4.1-original/cmake/FindPython.cmake 2013-05-20 03:06:14.000000000 -0500
-+++ weechat-0.4.1/cmake/FindPython.cmake  2013-05-23 14:24:33.000000000 -0500
-@@ -41,7 +41,8 @@
- ELSE(ENABLE_PYTHON3)
-   FIND_PROGRAM(PYTHON_EXECUTABLE
-     NAMES python2.7 python2.6 python2.5 python
--    PATHS /usr/bin /usr/local/bin /usr/pkg/bin
-+    PATHS HOMEBREW_PREFIX/bin /usr/bin
-+    NO_DEFAULT_PATH
-     )
- ENDIF(ENABLE_PYTHON3)
- 
-@@ -74,6 +75,7 @@
-     FIND_LIBRARY(PYTHON_LIBRARY
-       NAMES python2.7 python2.6 python2.5 python
-       PATHS ${PYTHON_POSSIBLE_LIB_PATH}
-+      NO_DEFAULT_PATH
-       )
-   ENDIF(ENABLE_PYTHON3)
- 
+  test do
+    ENV["TERM"] = "xterm"
+    system "weechat", "-r", "/quit"
+  end
+end

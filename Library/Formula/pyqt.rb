@@ -1,102 +1,92 @@
-require 'formula'
-
 class Pyqt < Formula
-  homepage 'http://www.riverbankcomputing.co.uk/software/pyqt'
-  url 'http://downloads.sf.net/project/pyqt/PyQt4/PyQt-4.10.3/PyQt-mac-gpl-4.10.3.tar.gz'
-  sha1 'ba5465f92fb43c9f0a5b948fa25df5045f160bf0'
+  desc "Python bindings for Qt"
+  homepage "http://www.riverbankcomputing.co.uk/software/pyqt"
+  url "https://downloads.sf.net/project/pyqt/PyQt4/PyQt-4.11.3/PyQt-mac-gpl-4.11.3.tar.gz"
+  sha256 "8b8bb3a2ef8b7368710e0bc59d6e94e1f513f7dbf10a3aaa3154f7b848c88b4d"
 
-  depends_on :python => :recommended
-  depends_on :python3 => :optional
-
-  depends_on 'qt'  # From their site: PyQt currently supports Qt v4 and will build against Qt v5
-
-  if build.with? 'python3'
-    depends_on 'sip' => 'with-python3'
-  else
-    depends_on 'sip'
+  bottle do
+    sha1 "7d0b71a8c80401f6026172f22605e5a4e9eff8a3" => :yosemite
+    sha1 "455a2cc8c46f64b2d27d2248b3bd6387e345377f" => :mavericks
+    sha1 "30c74d1bfad2bc16c0052fd767fdb21b461e41e6" => :mountain_lion
   end
 
-  def patches
-    # On Mavericks we want to target libc++, but this requires a user specified
-    # qmake makespec. Unfortunately user specified makespecs are broken in the
-    # configure.py script, so we have to fix the makespec path handling logic.
-    DATA
+  option "without-python", "Build without python 2 support"
+  depends_on :python3 => :optional
+
+  if build.without?("python3") && build.without?("python")
+    odie "pyqt: --with-python3 must be specified when using --without-python"
+  end
+
+  depends_on "qt"
+
+  if build.with? "python3"
+    depends_on "sip" => "with-python3"
+  else
+    depends_on "sip"
   end
 
   def install
-    python do
+    # On Mavericks we want to target libc++, this requires a non default qt makespec
+    if ENV.compiler == :clang && MacOS.version >= :mavericks
+      ENV.append "QMAKESPEC", "unsupported/macx-clang-libc++"
+    end
 
-      # On Mavericks we want to target libc++, this requires a non default qt makespec
-      if ENV.compiler == :clang and MacOS.version >= :mavericks
-        ENV.append "QMAKESPEC", "unsupported/macx-clang-libc++"
+    Language::Python.each_python(build) do |python, version|
+      ENV.append_path "PYTHONPATH", "#{Formula["sip"].opt_lib}/python#{version}/site-packages"
+
+      args = ["--confirm-license",
+              "--bindir=#{bin}",
+              "--destdir=#{lib}/python#{version}/site-packages",
+              "--sipdir=#{share}/sip"]
+
+      # We need to run "configure.py" so that pyqtconfig.py is generated, which
+      # is needed by QGIS, PyQWT (and many other PyQt interoperable
+      # implementations such as the ROS GUI libs). This file is currently needed
+      # for generating build files appropriate for the qmake spec that was used
+      # to build Qt.  The alternatives provided by configure-ng.py is not
+      # sufficient to replace pyqtconfig.py yet (see
+      # https://github.com/qgis/QGIS/pull/1508). Using configure.py is
+      # deprecated and will be removed with SIP v5, so we do the actual compile
+      # using the newer configure-ng.py as recommended. In order not to
+      # interfere with the build using configure-ng.py, we run configure.py in a
+      # temporary directory and only retain the pyqtconfig.py from that.
+
+      require "tmpdir"
+      dir = Dir.mktmpdir
+      begin
+        cp_r(Dir.glob("*"), dir)
+        cd dir do
+          system python, "configure.py", *args
+          (lib/"python#{version}/site-packages/PyQt4").install "pyqtconfig.py"
+        end
+      ensure
+        remove_entry_secure dir
       end
 
-      args = [ "--confirm-license",
-               "--bindir=#{bin}",
-               "--destdir=#{lib}/#{python.xy}/site-packages",
-               "--sipdir=#{share}/sip#{python.if3then3}" ]
-      # We need to run "configure.py" so that pyqtconfig.py is generated, which
-      # is needed by PyQWT for determining the correct build settings. But do
-      # the actual compile, we use the newer configure-ng.py.
-      system python, "configure.py", *args
-      (python.site_packages/'PyQt4').install 'pyqtconfig.py'
-
       # On Mavericks we want to target libc++, this requires a non default qt makespec
-      if ENV.compiler == :clang and MacOS.version >= :mavericks
+      if ENV.compiler == :clang && MacOS.version >= :mavericks
         args << "--spec" << "unsupported/macx-clang-libc++"
       end
 
-      system python, "./configure-ng.py", *args
+      system python, "configure-ng.py", *args
       system "make"
       system "make", "install"
-      system "make", "clean"  # because this python block may be run twice
-    end
-
-    if build.with? 'python3' and build.with? 'python'
-      ['pyuic4', 'pyrcc4', 'pylupdate4'].each { |f| mv(bin/f, bin/"#{f}-py3")}
+      system "make", "clean"  # for when building against multiple Pythons
     end
   end
 
   def caveats
-    python.standard_caveats if python
+    "Phonon support is broken."
   end
 
   test do
-    # To test Python 3.x, you have to `brew test pyqt --with-python3`
-    Pathname('test.py').write <<-EOS.undent
-      import sys
-      from PyQt4 import QtGui, QtCore
-
-      class Test(QtGui.QWidget):
-          def __init__(self, parent=None):
-              QtGui.QWidget.__init__(self, parent)
-              self.setGeometry(300, 300, 400, 150)
-              self.setWindowTitle('Homebrew')
-              QtGui.QLabel("Python " + "{0}.{1}.{2}".format(*sys.version_info[0:3]) +
-                           " working with PyQt4. Quitting now...", self).move(50, 50)
-              QtCore.QTimer.singleShot(1500, QtGui.qApp, QtCore.SLOT('quit()'))
-
-      app = QtGui.QApplication([])
-      window = Test()
-      window.show()
-      sys.exit(app.exec_())
+    Pathname("test.py").write <<-EOS.undent
+      from PyQt4 import QtNetwork
+      QtNetwork.QNetworkAccessManager().networkAccessible()
     EOS
-    python do
+
+    Language::Python.each_python(build) do |python, _version|
       system python, "test.py"
     end
   end
 end
-__END__
-diff --git a/configure.py b/configure.py
-index a8e5dcd..a5f1474 100644
---- a/configure.py
-+++ b/configure.py
-@@ -1886,7 +1886,7 @@ def get_build_macros(overrides):
-     if "QMAKESPEC" in list(os.environ.keys()):
-         fname = os.environ["QMAKESPEC"]
- 
--        if not os.path.dirname(fname):
-+        if not os.path.dirname(fname) or fname.startswith('unsupported'):
-             qt_macx_spec = fname
-             fname = os.path.join(qt_archdatadir, "mkspecs", fname)
-     elif sys.platform == "darwin":

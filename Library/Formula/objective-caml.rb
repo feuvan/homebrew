@@ -1,34 +1,51 @@
-require 'formula'
-
+# OCaml does not preserve binary compatibility across compiler releases,
+# so when updating it you should ensure that all dependent packages are
+# also updated by incrementing their revisions.
+#
+# Specific packages to pay attention to include:
+# - camlp4
+# - opam
+#
+# Applications that really shouldn't break on a compiler update are:
+# - mldonkey
+# - coq
+# - coccinelle
+# - unison
 class ObjectiveCaml < Formula
-  homepage 'http://ocaml.org'
-  url 'http://caml.inria.fr/pub/distrib/ocaml-4.01/ocaml-4.01.0.tar.gz'
-  sha1 '31ae98051d42e038f4fbc5fd338c4fa5c36744e0'
+  desc "General purpose programming language in the ML family"
+  homepage "https://ocaml.org/"
+  head "http://caml.inria.fr/svn/ocaml/trunk", :using => :svn
 
-  head 'http://caml.inria.fr/svn/ocaml/trunk', :using => :svn
-
-  depends_on :x11 if MacOS::X11.installed?
-
-  bottle do
-    sha1 'cba09036b0ddc87f04675f3ceaac2c46b99dcb20' => :mountain_lion
-    sha1 '90e110ace80da3e633b3ba0b95530fe5d43045d7' => :lion
-    sha1 '5b320577bcb6e39ada153e2de14a105a2afb5ca2' => :snow_leopard
+  stable do
+    url "http://caml.inria.fr/pub/distrib/ocaml-4.02/ocaml-4.02.3.tar.gz"
+    sha256 "928fb5f64f4e141980ba567ff57b62d8dc7b951b58be9590ffb1be2172887a72"
   end
 
-  def install
-    system "./configure", "--prefix", HOMEBREW_PREFIX,
-                          "--mandir", man,
-                          "-cc", ENV.cc,
-                          "-with-debug-runtime",
-                          "-aspp", "#{ENV.cc} -c"
-    ENV.deparallelize # Builds are not parallel-safe, esp. with many cores
-    system "make world"
-    system "make opt"
-    system "make opt.opt"
-    system "make", "PREFIX=#{prefix}", "install"
+  bottle do
+    cellar :any
+    sha256 "b0a69f73027d6bd6fedea3a4828665b0dd2d10c8b4fd14b427c7b76963dfee40" => :yosemite
+    sha256 "6eaaae269acbe7353b058f12f5f9d52ead4e7921f0e21dffe9aaab6fdf79d23e" => :mavericks
+    sha256 "638b4c9d3cef687b895b24bb9dd0e3f042aa3def5c8446636c0b389196593181" => :mountain_lion
+  end
 
-    # site-lib in the Cellar will be a symlink to the HOMEBREW_PREFIX location,
-    # which is mkpath'd by Keg#link when something installs into it
-    ln_s HOMEBREW_PREFIX/"lib/ocaml/site-lib", lib/"ocaml/site-lib"
+  option "with-x11", "Install with the Graphics module"
+
+  depends_on :x11 => :optional
+
+  def install
+    ENV.deparallelize # Builds are not parallel-safe, esp. with many cores
+
+    # the ./configure in this package is NOT a GNU autoconf script!
+    args = ["-prefix", "#{HOMEBREW_PREFIX}", "-with-debug-runtime", "-mandir", man]
+    args << "-no-graph" if build.without? "x11"
+    system "./configure", *args
+
+    system "make", "world.opt"
+    system "make", "install", "PREFIX=#{prefix}"
+  end
+
+  test do
+    assert_match "val x : int = 1", shell_output("echo 'let x = 1 ;;' | ocaml 2>&1")
+    assert_match "#{HOMEBREW_PREFIX}", shell_output("ocamlc -where")
   end
 end

@@ -1,18 +1,15 @@
-require 'formula'
-
 class TypesafeActivator < Formula
-  homepage 'http://typesafe.com/activator'
-  url 'http://downloads.typesafe.com/typesafe-activator/1.0.9/typesafe-activator-1.0.9.zip'
-  sha1 'ee5990fe00d8b6a844934810e804f3e70d954e48'
+  desc "Tools for working with Typesafe Reactive Platform"
+  homepage "https://typesafe.com/activator"
+  version "1.3.5"
+  url "https://downloads.typesafe.com/typesafe-activator/1.3.5/typesafe-activator-1.3.5-minimal.zip"
+  sha256 "bafa6f3ab8078c446b9c019297fb8123c2987d934924160a3dbba95b8136f8ca"
 
   def install
-    # remove Windows .bat files
-    rm Dir['*.bat']
-    rm Dir["#{buildpath}/**/*.bat"]
-
+    rm Dir["*.bat"] # Remove Windows .bat files
     prefix.install_metafiles
-
-    libexec.install Dir['*']
-    bin.write_exec_script libexec/'activator'
+    libexec.install Dir["*"]
+    chmod 0755, libexec/"activator"
+    bin.write_exec_script libexec/"activator"
   end
 end

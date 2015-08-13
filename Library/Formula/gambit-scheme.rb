@@ -1,15 +1,20 @@
-require 'formula'
-
 class GambitScheme < Formula
-  homepage 'http://dynamo.iro.umontreal.ca/~gambit/wiki/index.php/Main_Page'
-  url 'http://www.iro.umontreal.ca/~gambit/download/gambit/v4.7/source/gambc-v4_7_0.tgz'
-  sha256 '2b03ecef89da2a53212dc3e6583ee4175d91a0752779e1758bcab5d09e9d1e63'
+  desc "Complete, portable implementation of Scheme"
+  homepage "http://dynamo.iro.umontreal.ca/~gambit/wiki/index.php/Main_Page"
+  url "http://www.iro.umontreal.ca/~gambit/download/gambit/v4.7/source/gambc-v4_7_3.tgz"
+  sha256 "59c4c62f2cfaf698b54a862e7af9c1b3e4cc27e46d386f31c66e00fed4701777"
 
-  conflicts_with 'ghostscript', :because => 'both install `gsc` binaries'
-  conflicts_with 'scheme48', :because => 'both install `scheme-r5rs` binaries'
+  bottle do
+    sha1 "4f04f85300495e2c3fad49206b57605d010ad1f7" => :mavericks
+    sha1 "57c650e3539e41e084f29adf26160e920e3a068e" => :mountain_lion
+    sha1 "f4002601e8f904d064909b5df30479a26c916f8d" => :lion
+  end
 
-  option 'with-check', 'Execute "make check" before installing'
-  option 'enable-shared', 'Build Gambit Scheme runtime as shared library'
+  conflicts_with "ghostscript", :because => "both install `gsc` binaries"
+  conflicts_with "scheme48", :because => "both install `scheme-r5rs` binaries"
+
+  option "with-check", 'Execute "make check" before installing'
+  option "enable-shared", "Build Gambit Scheme runtime as shared library"
 
   fails_with :llvm
 
@@ -27,7 +32,7 @@ class GambitScheme < Formula
     # Don't enable this when using clang, per configure warning.
     args << "--enable-single-host" unless ENV.compiler == :clang
 
-    args << "--enable-shared" if build.include? 'enable-shared'
+    args << "--enable-shared" if build.include? "enable-shared"
 
     if ENV.compiler == :clang
       opoo <<-EOS.undent
@@ -39,10 +44,14 @@ class GambitScheme < Formula
     end
 
     system "./configure", *args
-    system "make check" if build.include? 'with-check'
+    system "make check" if build.with? "check"
 
     ENV.j1
     system "make"
-    system "make install"
+    system "make", "install"
+  end
+
+  test do
+    system "#{bin}/gsi", "-e", '(print "hello world")'
   end
 end
